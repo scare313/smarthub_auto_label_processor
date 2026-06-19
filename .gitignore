@@ -1,0 +1,8 @@
+node_modules/
+profile/
+labels/
+data/
+*.log
+config/alerts.json
+LOGIN-REQUIRED.txt
+.claude/

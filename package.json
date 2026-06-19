@@ -1,0 +1,18 @@
+{
+  "name": "auto_order_processor",
+  "version": "0.1.0",
+  "description": "SmartHub (smarthub.amazon.in) order auto-processor — Phase 1",
+  "type": "module",
+  "bin": {
+    "aop": "index.js"
+  },
+  "scripts": {
+    "login": "node index.js login",
+    "run": "node index.js run"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "nodemailer": "^9.0.1",
+    "playwright": "^1.49.0"
+  }
+}
