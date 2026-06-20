@@ -9,6 +9,10 @@ import { chromium } from "playwright";
 import { BASE_URL, PROFILE_DIR } from "./config.js";
 import { log } from "./log.js";
 
+// SmartHub API calls can be slow on some accounts/links (the default Playwright
+// request timeout is only 30s). Use a generous timeout for all API calls.
+const API_TIMEOUT = 120000;
+
 export class SessionExpiredError extends Error {
   constructor(msg) {
     super(msg);
@@ -65,7 +69,7 @@ export class SmartHubClient {
   }
 
   async _getJson(pathname, where) {
-    const resp = await this.req.get(BASE_URL + pathname, { headers: this._headers() });
+    const resp = await this.req.get(BASE_URL + pathname, { headers: this._headers(), timeout: API_TIMEOUT });
     this._guard(resp, where);
     return resp.json();
   }
@@ -74,6 +78,7 @@ export class SmartHubClient {
     const resp = await this.req.post(BASE_URL + pathname, {
       headers: this._headers(),
       data: body,
+      timeout: API_TIMEOUT,
     });
     this._guard(resp, where);
     const text = await resp.text();
@@ -89,6 +94,7 @@ export class SmartHubClient {
     const resp = await this.req.post(BASE_URL + "/api/graphql", {
       headers: this._headers(),
       data: { operationName: opName, query: GQL[opName], variables },
+      timeout: API_TIMEOUT,
     });
     this._guard(resp, where);
     const text = await resp.text();
