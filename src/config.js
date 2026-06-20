@@ -26,6 +26,8 @@ export const CHANNELS = {
     marketplace: "AMAZON",
     isSelfShip: false,
     cutoff: "13:45", // IST handover cutoff
+    boxName: "CustomBox", // unified 15x15x2 CustomBox (was RecommendedPackage — verify with --limit 1)
+    requiresPickupSlot: true, // Amazon MFN requires pickupSlotId on the label call
   },
   flipkart: {
     key: "flipkart",
@@ -33,8 +35,27 @@ export const CHANNELS = {
     marketplace: "FLIPKART",
     isSelfShip: false,
     cutoff: "23:45",
+    boxName: "CustomBox",
+    requiresPickupSlot: false,
   },
-  // meesho: { ... }  // TODO: capture salesChannel + marketplace on first live run
+  meesho: {
+    key: "meesho",
+    salesChannel: "MEESHO", // confirmed from orders/summary
+    marketplace: "MEESHO", // ASSUMED — verify on first label retrieval (Amazon=AMAZON, Flipkart=FLIPKART)
+    isSelfShip: false,
+    cutoff: "22:50",
+    boxName: "CustomBox", // ASSUMED — verify on first live processing
+    requiresPickupSlot: false, // ASSUMED — verify on first live processing (Amazon needed it)
+  },
+  fba: {
+    key: "fba",
+    salesChannel: "FBA", // confirmed from orders/summary
+    marketplace: "AMAZON", // ASSUMED — verify on first label retrieval
+    isSelfShip: false,
+    cutoff: "13:45", // ASSUMED same as Amazon MFN — confirm FBA handover cutoff
+    boxName: "CustomBox", // unified 15x15x2 CustomBox — verify on first live processing
+    requiresPickupSlot: true, // ASSUMED (Amazon) — verify on first live processing
+  },
 };
 
 export function resolveChannel(name) {

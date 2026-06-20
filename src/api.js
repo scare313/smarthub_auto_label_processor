@@ -110,9 +110,43 @@ export class SmartHubClient {
 
   // --- Session check -------------------------------------------------------
 
-  // Returns true if the session is alive (user/details responds with JSON).
+  // Warm up the session: navigate to the app so Amazon can refresh its rotating
+  // auth tokens (at-acbin / sess-at-acbin). A cold API call can 401 with a merely
+  // *stale* (but refreshable) token; loading a page triggers the refresh redirects
+  // and writes fresh cookies back to the persistent profile.
+  // Returns true if logged in, false if redirected to a sign-in page.
+  async warmup() {
+    const page = await this.context.newPage();
+    try {
+      await page.goto(BASE_URL + "/dashboard", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+
+      // SmartHub uses Amazon SSO. The URL may bounce through amazon.in/ap/signin
+      // and AUTO-redirect back to smarthub when the parent Amazon session is still
+      // valid (no OTP needed). So if we're on a signin URL, wait for it to settle
+      // back to smarthub before deciding. If it stays on signin with an actual
+      // password field, the session is genuinely dead.
+      if (/\/ap\/signin/i.test(page.url())) {
+        await page.waitForURL(/smarthub\.amazon\.in/, { timeout: 20000 }).catch(() => {});
+      }
+
+      const url = page.url();
+      if (/smarthub\.amazon\.in/i.test(url)) return true; // settled back -> logged in
+
+      // Still on a sign-in page: only treat as logged-out if a password field is
+      // actually shown (a real login form, not a transient redirect).
+      const hasPasswordField = await page.locator('input[type="password"]').count().catch(() => 0);
+      return !hasPasswordField; // no form visible -> assume mid-redirect / fine
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  // Returns true if the session is alive. Warms up first (token refresh), then
+  // confirms with an API call.
   async checkSession() {
     try {
+      const loggedIn = await this.warmup();
+      if (!loggedIn) return false;
       await this._getJson("/api/user/details", "checkSession");
       return true;
     } catch (e) {
@@ -197,6 +231,21 @@ export class SmartHubClient {
     return this._postJson("/api/bulk-pack/list-pickup-slots", { customerShipmentIds }, "listPickupSlots");
   }
 
+  // Map each customerShipmentId -> its recommended pickup slotId (first package).
+  // Returns {} if none. Needed because Amazon MFN requires pickupSlotId on the
+  // generate-shiplabel call.
+  static recommendedSlotMap(slotsResp) {
+    const out = {};
+    const map = slotsResp?.shipmentIdToPickupSlotsByPackageListMap || {};
+    for (const csid of Object.keys(map)) {
+      const pkgs = map[csid] || [];
+      const first = pkgs[0] || {};
+      const slot = first.recommendedPickupSlot || (first.pickupSlotsList || [])[0];
+      if (slot && slot.slotId) out[csid] = slot.slotId;
+    }
+    return out;
+  }
+
   async generateInvoices(customerShipmentIdList) {
     return this._postJson("/api/bulk-pack/generate-invoices", { customerShipmentIdList }, "generateInvoices");
   }
@@ -230,8 +279,9 @@ export class SmartHubClient {
 
   // Download a (presigned S3) URL and return its bytes. No auth headers — the
   // URL is already signed; sending our smarthub headers can break the S3 request.
+  // Generous timeout: combined label PDFs can be several MB over a slow link.
   async downloadBytes(url) {
-    const resp = await this.context.request.get(url);
+    const resp = await this.context.request.get(url, { timeout: 180000 });
     if (!resp.ok()) throw new Error(`downloadBytes: HTTP ${resp.status()}`);
     return Buffer.from(await resp.body());
   }

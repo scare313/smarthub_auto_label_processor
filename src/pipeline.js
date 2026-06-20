@@ -7,6 +7,7 @@
 // before any irreversible write (packages / invoices / ship labels).
 
 import { SHIP_LABEL_RESOLUTION, DEFAULT_PACKAGE } from "./config.js";
+import { SmartHubClient } from "./api.js";
 import { store } from "./store.js";
 import { log } from "./log.js";
 
@@ -46,7 +47,7 @@ function extractLineItems(validateResp) {
   return out;
 }
 
-function buildPackage(s) {
+function buildPackage(s, boxName) {
   // Fixed package dimensions for every order, per business decision.
   return {
     customerShipmentId: s.customerShipmentId,
@@ -54,7 +55,7 @@ function buildPackage(s) {
     width: DEFAULT_PACKAGE.width,
     height: DEFAULT_PACKAGE.height,
     weight: DEFAULT_PACKAGE.weight,
-    boxName: DEFAULT_PACKAGE.boxName,
+    boxName,
     hazmatLabels: [],
     fragile: false,
   };
@@ -95,8 +96,13 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
 
   let todo = [];
   for (const s of unique) {
-    if (store.isProcessed(s.customerShipmentId)) continue; // idempotency
-    if (!PACKABLE.has(s.shipmentStatus)) continue; // already packed/shipped/cancelled
+    // SmartHub status is the SOURCE OF TRUTH for idempotency: only BOUND
+    // shipments still need packing. A packed/labelled order moves out of BOUND,
+    // so re-running can never double-process. We deliberately do NOT gate on the
+    // local store here — the store can drift from SmartHub (e.g. a backend
+    // failure that returns OK but doesn't persist), and must never block an order
+    // that SmartHub still shows as unpacked.
+    if (!PACKABLE.has(s.shipmentStatus)) continue;
     todo.push(s);
   }
 
@@ -127,46 +133,86 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
   }
 
   // 3. LIVE — irreversible from here.
-  const ids = todo.map((s) => s.customerShipmentId);
-
-  log.step(`[${channel.key}] Creating packages for ${ids.length} shipment(s)...`);
-  const pkgResp = await client.createPackages(todo.map(buildPackage));
+  const boxName = channel.boxName || DEFAULT_PACKAGE.boxName;
+  log.step(`[${channel.key}] Creating packages for ${todo.length} shipment(s)...`);
+  const pkgResp = await client.createPackages(todo.map((s) => buildPackage(s, boxName)));
   const pkgErrors = pkgResp?.shipmentIdToErrorMap || {};
+
+  // Drop any shipment that failed to pack — do not try to label those.
+  let work = todo.filter((s) => !pkgErrors[s.customerShipmentId]);
   if (Object.keys(pkgErrors).length) {
-    log.warn(`[${channel.key}] Package errors: ${JSON.stringify(pkgErrors).slice(0, 300)}`);
+    log.warn(`[${channel.key}] ${Object.keys(pkgErrors).length} package error(s): ${JSON.stringify(pkgErrors).slice(0, 300)}`);
+    for (const id of Object.keys(pkgErrors)) store.audit(channel.key, "pack-failed", `${id}: ${JSON.stringify(pkgErrors[id]).slice(0, 120)}`);
+  }
+  if (!work.length) {
+    log.err(`[${channel.key}] All shipments failed to pack. Nothing labelled.`);
+    return { channel: channel.key, shipments: unique.length, processed: 0, failed: todo.length };
   }
 
+  const ids = work.map((s) => s.customerShipmentId);
+
   log.step(`[${channel.key}] Listing pickup slots...`);
-  await client.listPickupSlots(ids);
+  const slotsResp = await client.listPickupSlots(ids);
+  const slotMap = SmartHubClient.recommendedSlotMap(slotsResp);
+
+  // Amazon MFN requires a pickupSlotId on the label call; bail if missing.
+  if (channel.requiresPickupSlot) {
+    const missing = work.filter((s) => !slotMap[s.customerShipmentId]);
+    if (missing.length) {
+      log.err(`[${channel.key}] ${missing.length} shipment(s) have no pickup slot — cannot label. Will retry next cycle.`);
+      for (const s of missing) store.audit(channel.key, "no-slot", `${s.orderId} [${s.customerShipmentId}]`);
+      work = work.filter((s) => slotMap[s.customerShipmentId]);
+    }
+    if (!work.length) {
+      return { channel: channel.key, shipments: unique.length, processed: 0, failed: todo.length };
+    }
+  }
 
   log.step(`[${channel.key}] Generating invoices...`);
-  await client.generateInvoices(ids);
+  await client.generateInvoices(work.map((s) => s.customerShipmentId));
 
   log.step(`[${channel.key}] Generating ship labels...`);
-  const shipLabelRequests = todo.map((s) => ({
-    selectedBoxId: "CustomBox",
-    customerShipmentId: s.customerShipmentId,
-    shippingLabelPrinterResolution: SHIP_LABEL_RESOLUTION,
-    salesChannel: channel.salesChannel,
-  }));
+  const shipLabelRequests = work.map((s) => {
+    const req = {
+      selectedBoxId: boxName,
+      customerShipmentId: s.customerShipmentId,
+      shippingLabelPrinterResolution: SHIP_LABEL_RESOLUTION,
+      salesChannel: channel.salesChannel,
+    };
+    if (slotMap[s.customerShipmentId]) req.pickupSlotId = slotMap[s.customerShipmentId];
+    return req;
+  });
   const labelResp = await client.generateShipLabel(shipLabelRequests);
   const trackingMap = labelResp?.shipmentIdToPackageTrackingInfoListMap || {};
 
-  // 4. Record each order as LABELED + printed:false. The printable PDF is NOT
-  //    downloaded here — that is deferred to the `print` command, which combines
-  //    all unprinted labels on demand (avoids duplicate prints / per-run PDFs).
-  for (const s of todo) {
+  // 4. VERIFY success per order: only orders that actually got a tracking ID back
+  //    are recorded as LABELED. Orders with no tracking (e.g. a SmartHub backend
+  //    failure that returns OK but doesn't persist) are left UNRECORDED so they
+  //    stay BOUND and get retried on the next cycle — never falsely marked done.
+  const labeled = work.filter((s) => ((trackingMap[s.customerShipmentId] || [])[0] || {}).trackingId);
+  const failed = work.filter((s) => !((trackingMap[s.customerShipmentId] || [])[0] || {}).trackingId);
+
+  for (const s of labeled) {
     const tInfo = (trackingMap[s.customerShipmentId] || [])[0] || {};
     store.markProcessed(s.customerShipmentId, {
       orderId: s.orderId,
       channel: channel.key,
       date,
-      trackingId: tInfo.trackingId || null,
+      trackingId: tInfo.trackingId,
       lineItems: lineItemsByCsid[s.customerShipmentId] || [],
     });
   }
-  store.audit(channel.key, "labeled", `${ids.length} shipments`);
 
-  log.ok(`[${channel.key}] LIVE complete. Labelled ${todo.length} shipment(s). Run \`print\` to get the PDF.`);
-  return { channel: channel.key, shipments: unique.length, processed: todo.length };
+  if (failed.length) {
+    log.err(`[${channel.key}] ${failed.length} shipment(s) returned NO tracking ID — not recorded, will retry next cycle.`);
+    for (const s of failed) store.audit(channel.key, "label-failed", `${s.orderId} [${s.customerShipmentId}] no trackingId`);
+  }
+  store.audit(channel.key, "labeled", `${labeled.length} ok, ${failed.length} failed, ${Object.keys(pkgErrors).length} pack-errors`);
+
+  if (!labeled.length) {
+    log.err(`[${channel.key}] LIVE: 0 labelled successfully (SmartHub may be having issues). Will retry next cycle.`);
+  } else {
+    log.ok(`[${channel.key}] LIVE complete. Labelled ${labeled.length} shipment(s). Run \`print\` to get the PDF.`);
+  }
+  return { channel: channel.key, shipments: unique.length, processed: labeled.length, failed: failed.length };
 }
