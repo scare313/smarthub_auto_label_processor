@@ -26,7 +26,7 @@ export const CHANNELS = {
     marketplace: "AMAZON",
     isSelfShip: false,
     cutoff: "13:45", // IST handover cutoff
-    boxName: "CustomBox", // unified 15x15x2 CustomBox (was RecommendedPackage — verify with --limit 1)
+    boxName: "RecommendedPackage", // Amazon MFN REQUIRES this — "CustomBox" hangs generate-shiplabel (verified 2026-06-23). Dims still 15x15x2.
     requiresPickupSlot: true, // Amazon MFN requires pickupSlotId on the label call
   },
   flipkart: {
@@ -53,7 +53,7 @@ export const CHANNELS = {
     marketplace: "AMAZON", // ASSUMED — verify on first label retrieval
     isSelfShip: false,
     cutoff: "13:45", // ASSUMED same as Amazon MFN — confirm FBA handover cutoff
-    boxName: "CustomBox", // unified 15x15x2 CustomBox — verify on first live processing
+    boxName: "RecommendedPackage", // Amazon infra — CustomBox hangs the label call. Dims still 15x15x2.
     requiresPickupSlot: true, // ASSUMED (Amazon) — verify on first live processing
   },
 };
