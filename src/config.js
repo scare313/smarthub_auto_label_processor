@@ -26,7 +26,7 @@ export const CHANNELS = {
     marketplace: "AMAZON",
     isSelfShip: false,
     cutoff: "13:45", // IST handover cutoff
-    boxName: "RecommendedPackage", // Amazon MFN REQUIRES this — "CustomBox" hangs generate-shiplabel (verified 2026-06-23). Dims still 15x15x2.
+    boxName: "CustomBox", // CustomBox forces our 15x15x2 dims (RecommendedPackage lets Amazon substitute). Label response can be slow on Amazon but reconciliation self-heals any timeout.
     requiresPickupSlot: true, // Amazon MFN requires pickupSlotId on the label call
   },
   flipkart: {
@@ -53,7 +53,7 @@ export const CHANNELS = {
     marketplace: "AMAZON", // ASSUMED — verify on first label retrieval
     isSelfShip: false,
     cutoff: "13:45", // ASSUMED same as Amazon MFN — confirm FBA handover cutoff
-    boxName: "RecommendedPackage", // Amazon infra — CustomBox hangs the label call. Dims still 15x15x2.
+    boxName: "CustomBox", // forces our 15x15x2 dims (see amazon note)
     requiresPickupSlot: true, // ASSUMED (Amazon) — verify on first live processing
   },
 };
