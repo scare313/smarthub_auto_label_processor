@@ -63,7 +63,7 @@ function todayIST() {
 
 async function cmdLogin() {
   log.info("Opening SmartHub. Log in with your Amazon credentials + OTP, then press ENTER here.");
-  const client = await SmartHubClient.launch({ headless: false });
+  const client = await SmartHubClient.launch({ visible: true });
   const page = await client.context.newPage();
   await page.goto(BASE_URL + "/", { waitUntil: "domcontentloaded" }).catch(() => {});
   await new Promise((resolve) => {

@@ -30,11 +30,18 @@ export class SmartHubClient {
   constructor(context) {
     this.context = context;
     this.req = context.request;
+    this.page = null; // persistent authenticated page used for all API calls
   }
 
-  static async launch({ headless = false } = {}) {
+  // NOTE: we ALWAYS launch headed — Amazon's SSO auto-redirect (the openid bounce
+  // back to smarthub) stalls in headless mode, leaving the session unusable.
+  // For unattended runs we launch headed but position the window far off-screen
+  // so it's invisible. `visible:true` (for `login`) shows a real on-screen window.
+  static async launch({ visible = false } = {}) {
+    const args = visible ? [] : ["--window-position=-32000,-32000", "--window-size=1280,800"];
     const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-      headless,
+      headless: false,
+      args,
       viewport: { width: 1366, height: 850 },
     });
     return new SmartHubClient(context);
@@ -44,74 +51,117 @@ export class SmartHubClient {
     await this.context.close();
   }
 
-  _headers() {
-    return {
-      "Content-Type": "application/json;charset=UTF-8",
-      Accept: "application/json, text/plain, */*",
-      Origin: BASE_URL,
-      Referer: BASE_URL + "/",
-    };
+  // Ensure a page exists and is on the smarthub origin so same-origin fetch is
+  // authenticated with the live session (httpOnly cookies included).
+  async _ensurePage() {
+    if (!this.page || this.page.isClosed()) {
+      this.page = await this.context.newPage();
+    }
+    if (!/smarthub\.amazon\.in/i.test(this.page.url())) {
+      await this.page.goto(BASE_URL + "/dashboard", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+      await this.page.waitForURL(/smarthub\.amazon\.in/, { timeout: 25000 }).catch(() => {});
+    }
+    return this.page;
   }
 
-  // Detect a dead session: API auth failures or being bounced to an HTML login page.
-  _guard(resp, where) {
-    const status = resp.status();
-    const ct = resp.headers()["content-type"] || "";
-    if (status === 401 || status === 403) {
-      throw new SessionExpiredError(`${where}: HTTP ${status} (session likely expired — run \`login\`)`);
+  // Make an API call from INSIDE the authenticated page (same-origin fetch).
+  // This is exactly how the real web app calls its API, so it uses the page's
+  // live session — avoiding the cookie-sync gap that context.request can hit.
+  async _pageRequest(method, pathname, body, timeout = API_TIMEOUT) {
+    const page = await this._ensurePage();
+    return page.evaluate(
+      async ({ method, url, body, timeout }) => {
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(), timeout);
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json;charset=UTF-8", Accept: "application/json, text/plain, */*" },
+            body: body != null ? JSON.stringify(body) : undefined,
+            credentials: "include",
+            signal: ctrl.signal,
+          });
+          const text = await res.text();
+          return { status: res.status, ct: res.headers.get("content-type") || "", text };
+        } catch (e) {
+          return { status: 0, ct: "", text: "", error: String(e) };
+        } finally {
+          clearTimeout(t);
+        }
+      },
+      { method, url: BASE_URL + pathname, body: body ?? null, timeout }
+    );
+  }
+
+  // Detect a dead session from a page-fetch result.
+  _guardResult(r, where) {
+    if (r.error) throw new Error(`${where}: ${r.error}`);
+    if (r.status === 401 || r.status === 403) {
+      throw new SessionExpiredError(`${where}: HTTP ${r.status} (session likely expired — run \`login\`)`);
     }
-    if (ct.includes("text/html")) {
+    if ((r.ct || "").includes("text/html")) {
       throw new SessionExpiredError(`${where}: got HTML instead of JSON (redirected to login — run \`login\`)`);
     }
-    if (!resp.ok()) {
-      throw new Error(`${where}: HTTP ${status}`);
+    if (r.status < 200 || r.status >= 300) {
+      throw new Error(`${where}: HTTP ${r.status}`);
+    }
+  }
+
+  // Run a request; if it looks session-expired (HTML/401), refresh the rotating
+  // Amazon tokens via a page navigation and retry ONCE. Only a genuinely dead
+  // session (refresh still lands on a login form) surfaces as SessionExpiredError.
+  async _withAuthRetry(fn) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!(e instanceof SessionExpiredError)) throw e;
+      const ok = await this.warmup();
+      if (!ok) throw e; // truly logged out
+      return await fn(); // tokens refreshed — retry once
     }
   }
 
   async _getJson(pathname, where) {
-    const resp = await this.req.get(BASE_URL + pathname, { headers: this._headers(), timeout: API_TIMEOUT });
-    this._guard(resp, where);
-    return resp.json();
+    return this._withAuthRetry(async () => {
+      const r = await this._pageRequest("GET", pathname, null);
+      this._guardResult(r, where);
+      return JSON.parse(r.text);
+    });
   }
 
   async _postJson(pathname, body, where) {
-    const resp = await this.req.post(BASE_URL + pathname, {
-      headers: this._headers(),
-      data: body,
-      timeout: API_TIMEOUT,
+    return this._withAuthRetry(async () => {
+      const r = await this._pageRequest("POST", pathname, body);
+      this._guardResult(r, where);
+      try {
+        return JSON.parse(r.text);
+      } catch {
+        return r.text; // some endpoints (e.g. /api/pick/list) return a bare string id
+      }
     });
-    this._guard(resp, where);
-    const text = await resp.text();
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text; // some endpoints (e.g. /api/pick/list) return a bare string id
-    }
   }
 
   // GraphQL responses come back base64-encoded JSON; decode transparently.
   async _graphql(opName, variables, where) {
-    const resp = await this.req.post(BASE_URL + "/api/graphql", {
-      headers: this._headers(),
-      data: { operationName: opName, query: GQL[opName], variables },
-      timeout: API_TIMEOUT,
-    });
-    this._guard(resp, where);
-    const text = await resp.text();
-    let json;
-    if (/^[A-Za-z0-9+/=\r\n]+$/.test(text.trim())) {
-      try {
-        json = JSON.parse(Buffer.from(text, "base64").toString("utf8"));
-      } catch {
+    return this._withAuthRetry(async () => {
+      const r = await this._pageRequest("POST", "/api/graphql", { operationName: opName, query: GQL[opName], variables });
+      this._guardResult(r, where);
+      const text = r.text;
+      let json;
+      if (/^[A-Za-z0-9+/=\r\n]+$/.test(text.trim())) {
+        try {
+          json = JSON.parse(Buffer.from(text, "base64").toString("utf8"));
+        } catch {
+          json = JSON.parse(text);
+        }
+      } else {
         json = JSON.parse(text);
       }
-    } else {
-      json = JSON.parse(text);
-    }
-    if (json.errors && json.errors.length) {
-      throw new Error(`${where}: GraphQL error ${JSON.stringify(json.errors).slice(0, 300)}`);
-    }
-    return json.data;
+      if (json.errors && json.errors.length) {
+        throw new Error(`${where}: GraphQL error ${JSON.stringify(json.errors).slice(0, 300)}`);
+      }
+      return json.data;
+    });
   }
 
   // --- Session check -------------------------------------------------------
@@ -122,39 +172,35 @@ export class SmartHubClient {
   // and writes fresh cookies back to the persistent profile.
   // Returns true if logged in, false if redirected to a sign-in page.
   async warmup() {
-    const page = await this.context.newPage();
-    try {
-      await page.goto(BASE_URL + "/dashboard", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    if (!this.page || this.page.isClosed()) this.page = await this.context.newPage();
 
-      // SmartHub uses Amazon SSO. The URL may bounce through amazon.in/ap/signin
-      // and AUTO-redirect back to smarthub when the parent Amazon session is still
-      // valid (no OTP needed). So if we're on a signin URL, wait for it to settle
-      // back to smarthub before deciding. If it stays on signin with an actual
-      // password field, the session is genuinely dead.
-      if (/\/ap\/signin/i.test(page.url())) {
-        await page.waitForURL(/smarthub\.amazon\.in/, { timeout: 20000 }).catch(() => {});
-      }
+    // Force a fresh navigation so Amazon's SSO refreshes the rotating tokens on
+    // the page session that our API fetches use.
+    await this.page.goto(BASE_URL + "/dashboard", { waitUntil: "domcontentloaded", timeout: 45000 }).catch(() => {});
+    // The URL bounces through amazon.in/ap/signin and AUTO-redirects back to
+    // smarthub when the parent Amazon session is valid (no OTP). Wait generously.
+    await this.page.waitForURL(/smarthub\.amazon\.in/, { timeout: 25000 }).catch(() => {});
+    await this.page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
 
-      const url = page.url();
-      if (/smarthub\.amazon\.in/i.test(url)) return true; // settled back -> logged in
+    const url = this.page.url();
+    if (/smarthub\.amazon\.in/i.test(url)) return true; // settled on smarthub -> logged in
 
-      // Still on a sign-in page: only treat as logged-out if a password field is
-      // actually shown (a real login form, not a transient redirect).
-      const hasPasswordField = await page.locator('input[type="password"]').count().catch(() => 0);
-      return !hasPasswordField; // no form visible -> assume mid-redirect / fine
-    } finally {
-      await page.close().catch(() => {});
-    }
+    // Not on smarthub: logged out only if an actual Amazon credential field is
+    // shown (email or password). Otherwise assume a transient redirect (fine).
+    const hasLoginForm = await this.page
+      .locator('#ap_password, #ap_email, input[type="password"]')
+      .count()
+      .catch(() => 0);
+    return !hasLoginForm;
   }
 
-  // Returns true if the session is alive. Warms up first (token refresh), then
-  // confirms with an API call.
+  // Returns true if the session is alive. Decided purely from the page (whether
+  // the dashboard loads vs a login form), which is reliable; the actual API calls
+  // self-heal any stale rotating token via _withAuthRetry, so no flaky cold API
+  // check here.
   async checkSession() {
     try {
-      const loggedIn = await this.warmup();
-      if (!loggedIn) return false;
-      await this._getJson("/api/user/details", "checkSession");
-      return true;
+      return await this.warmup();
     } catch (e) {
       if (e instanceof SessionExpiredError) return false;
       throw e;
