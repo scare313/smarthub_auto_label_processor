@@ -47,6 +47,25 @@ function extractLineItems(validateResp) {
   return out;
 }
 
+// Extract orders that are already PACKED in SmartHub, with their SKU line items.
+// Used to reconcile orphans: orders packed/labelled in SmartHub but missing from
+// our local store (e.g. a generate-shiplabel call that timed out but actually
+// succeeded, or orders processed manually / on another machine).
+function extractPackedOrders(validateResp) {
+  const packed = validateResp?.packedCustomerShipmentMapping || {};
+  const detail = validateResp?.eskuToEskuDetailMap || {};
+  const out = [];
+  for (const csid of Object.keys(packed)) {
+    const p = packed[csid] || {};
+    const lineItems = (p.lineItems || []).map((li) => {
+      const d = detail[li.eskuId] || {};
+      return { msku: String(d.msku || li.eskuId), qty: Number(li.quantity ?? 0) };
+    });
+    out.push({ customerShipmentId: csid, orderId: p.orderId, lineItems });
+  }
+  return out;
+}
+
 function buildPackage(s, boxName) {
   // Fixed package dimensions for every order, per business decision.
   return {
@@ -74,15 +93,40 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
   }
   log.info(`[${channel.key}] Found ${tasks.length} pick task(s): ${tasks.map((t) => `${t.id}(${t.status})`).join(", ")}`);
 
-  // 2. Validate each pick task and collect shipments (+ SKU line items).
+  // 2. Validate each pick task and collect shipments (+ SKU line items + packed).
   let shipments = [];
   const lineItemsByCsid = {};
+  const packedOrders = [];
   for (const t of tasks) {
     const v = await client.validatePickTask(t.id);
     const list = extractShipments(v).map((s) => ({ ...s, pickTaskId: t.id }));
     Object.assign(lineItemsByCsid, extractLineItems(v));
+    packedOrders.push(...extractPackedOrders(v));
     log.info(`[${channel.key}] ${t.id}: ${v.numberOfShipments} shipments, ${v.numberOfShipmentsPacked} already packed`);
     shipments.push(...list);
+  }
+
+  // 2b. Reconcile orphans: orders packed in SmartHub but not in our store become
+  // recorded as LABELED (printed:false) so `print` can fetch their labels.
+  if (!dryRun) {
+    let reconciled = 0;
+    for (const p of packedOrders) {
+      if (!store.isProcessed(p.customerShipmentId)) {
+        store.markProcessed(p.customerShipmentId, {
+          orderId: p.orderId,
+          channel: channel.key,
+          date,
+          trackingId: null, // not returned for already-packed orders; print uses the doc API
+          lineItems: p.lineItems,
+          reconciled: true,
+        });
+        reconciled++;
+      }
+    }
+    if (reconciled) {
+      log.ok(`[${channel.key}] Reconciled ${reconciled} packed order(s) missing from local store (now printable).`);
+      store.audit(channel.key, "reconciled", `${reconciled} packed orders`);
+    }
   }
 
   // De-dup across tasks and split into to-do vs skipped.
