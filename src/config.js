@@ -54,7 +54,7 @@ export const CHANNELS = {
     isSelfShip: false,
     cutoff: "13:45", // ASSUMED same as Amazon MFN — confirm FBA handover cutoff
     boxName: "CustomBox", // forces our 15x15x2 dims (see amazon note)
-    requiresPickupSlot: true, // ASSUMED (Amazon) — verify on first live processing
+    requiresPickupSlot: false, // FBA does not require a pickup slot
   },
 };
 
