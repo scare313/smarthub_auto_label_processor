@@ -64,6 +64,29 @@ export const store = {
       .map(([customerShipmentId, r]) => ({ customerShipmentId, ...r }));
   },
 
+  // All LABELED shipments (printed or not), optionally filtered by date/channel.
+  listLabeled({ date, channel } = {}) {
+    const s = read();
+    return Object.entries(s.processed)
+      .filter(([, r]) => r.status === "LABELED")
+      .filter(([, r]) => (date ? r.date === date : true))
+      .filter(([, r]) => (channel ? r.channel === channel : true))
+      .map(([customerShipmentId, r]) => ({ customerShipmentId, ...r }));
+  },
+
+  // Counts of labeled/printed shipments per channel for a date (local view).
+  countsByChannel(date) {
+    const s = read();
+    const out = {};
+    for (const r of Object.values(s.processed)) {
+      if (date && r.date !== date) continue;
+      out[r.channel] = out[r.channel] || { labeled: 0, printed: 0 };
+      if (r.status === "LABELED") out[r.channel].labeled++;
+      if (r.printed) out[r.channel].printed++;
+    }
+    return out;
+  },
+
   markPrinted(customerShipmentIds, printBatchId) {
     const s = read();
     const now = new Date().toISOString();

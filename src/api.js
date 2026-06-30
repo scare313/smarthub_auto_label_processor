@@ -227,6 +227,13 @@ export class SmartHubClient {
     return out;
   }
 
+  // Order counts for a channel on a date (total / packed / waiting etc.).
+  async getOrdersSummary(dateStr, salesChannel, isSelfShip = false) {
+    const qs = `date=${dateStr}&salesChannelFilters[0].salesChannel=${encodeURIComponent(salesChannel)}&salesChannelFilters[0].isSelfShip=${isSelfShip}`;
+    const arr = await this._getJson(`/api/orders/summary?${qs}`, "getOrdersSummary");
+    return Array.isArray(arr) ? arr[0] || null : arr;
+  }
+
   // Validate a pick task -> returns the shipments it contains.
   async validatePickTask(pickTaskId) {
     return this._getJson(

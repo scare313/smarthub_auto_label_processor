@@ -9,15 +9,17 @@ echo.
 echo   ====== SmartHub Order Processor ======
 echo.
 echo     [1]  Print New Labels  (+ Pick List)
-echo     [2]  Reprint Last Labels
-echo     [3]  Open Labels Folder
-echo     [4]  Process Orders Now
-echo     [5]  Login
+echo     [2]  Print All Today's Labels
+echo     [3]  Show Status
+echo     [4]  Reprint Last Labels
+echo     [5]  Open Labels Folder
+echo     [6]  Process Orders Now
+echo     [7]  Login
 echo.
 echo     ------------- Admin -------------
-echo     [6]  Setup Scheduler  (auto every 15 min)
-echo     [7]  Test Email Alert
-echo     [8]  Remove Scheduler
+echo     [8]  Setup Scheduler  (auto every 15 min)
+echo     [9]  Test Email Alert
+echo     [10] Remove Scheduler
 echo.
 echo     [0]  Exit
 echo.
@@ -25,19 +27,35 @@ set "choice="
 set /p choice="  Choose an option: "
 
 if "%choice%"=="1" goto print
-if "%choice%"=="2" goto reprint
-if "%choice%"=="3" goto folder
-if "%choice%"=="4" goto process
-if "%choice%"=="5" goto login
-if "%choice%"=="6" goto setup
-if "%choice%"=="7" goto testmail
-if "%choice%"=="8" goto remove
+if "%choice%"=="2" goto printall
+if "%choice%"=="3" goto status
+if "%choice%"=="4" goto reprint
+if "%choice%"=="5" goto folder
+if "%choice%"=="6" goto process
+if "%choice%"=="7" goto login
+if "%choice%"=="8" goto setup
+if "%choice%"=="9" goto testmail
+if "%choice%"=="10" goto remove
 if "%choice%"=="0" exit /b
 goto menu
 
 :print
 echo.
 node index.js print
+echo.
+pause
+goto menu
+
+:printall
+echo.
+node index.js print --all
+echo.
+pause
+goto menu
+
+:status
+echo.
+node index.js summary
 echo.
 pause
 goto menu

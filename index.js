@@ -24,6 +24,7 @@ import { SmartHubClient, SessionExpiredError } from "./src/api.js";
 import { processChannel } from "./src/pipeline.js";
 import { dumpPicklist } from "./src/picklist.js";
 import { printNewLabels, reprintLast } from "./src/print.js";
+import { marketStatus } from "./src/status.js";
 import { activateChannel } from "./src/activate.js";
 import { raiseSessionAlert, clearSessionAlert } from "./src/alert.js";
 import { sendEmail, emailConfigured } from "./src/notify.js";
@@ -215,20 +216,20 @@ async function cmdAuto(args) {
 }
 
 async function cmdPrint(args) {
+  const all = !!args.all;
   const date = args.date || undefined; // default: all unprinted regardless of date
-  const headless = !!args.headless;
   const channelKeys = args.channel ? [args.channel] : undefined; // default: all
   const open = !args["no-open"];
 
-  log.info("PRINT — combining unprinted labels into PDF(s).");
-  const client = await SmartHubClient.launch({ headless });
+  log.info(all ? "PRINT ALL — combining ALL of today's labels into PDF(s)." : "PRINT — combining unprinted labels into PDF(s).");
+  const client = await SmartHubClient.launch({});
   try {
     const alive = await client.checkSession();
     if (!alive) {
       log.err("Session expired or not logged in. Run:  node index.js login");
       process.exit(2);
     }
-    await printNewLabels(client, { channelKeys, date, open });
+    await printNewLabels(client, { channelKeys, date, open, all });
   } catch (e) {
     if (e instanceof SessionExpiredError) {
       log.err(`Session died: ${e.message}. Re-login with:  node index.js login`);
@@ -243,6 +244,24 @@ async function cmdPrint(args) {
 function cmdReprint() {
   // Pure local file reopen — no browser/session needed.
   reprintLast();
+}
+
+async function cmdSummary(args) {
+  const date = args.date || todayIST();
+  log.info("STATUS — fetching live marketplace order counts...");
+  const client = await SmartHubClient.launch({});
+  try {
+    const alive = await client.checkSession();
+    if (!alive) {
+      log.err("Session expired or not logged in. Run:  node index.js login");
+      process.exit(2);
+    }
+    await marketStatus(client, { date });
+  } catch (e) {
+    log.err(e.message);
+  } finally {
+    await client.close();
+  }
 }
 
 async function cmdPicklist(args) {
@@ -293,6 +312,8 @@ async function main() {
       return cmdPrint(args);
     case "reprint":
       return cmdReprint();
+    case "summary":
+      return cmdSummary(args);
     case "activate":
       return cmdActivate(args);
     case "auto":
@@ -310,7 +331,8 @@ Usage:
   node index.js run [--channel amazon|flipkart]        Label orders (DRY-RUN by default)
             [--date YYYY-MM-DD] [--live] [--limit N] [--headless]
   node index.js print [--channel ...] [--date ...]     Combine unprinted labels -> PDF + open
-            [--no-open] [--headless]
+            [--all] [--no-open]                        (--all = ALL of today's labels, not just new)
+  node index.js summary [--date ...]                   Live marketplace status (total/processed/waiting/printed)
   node index.js reprint                                Reopen the last print PDF(s) (no re-processing)
   node index.js picklist [--channel ...] [--date ...]  SKU pick manifest (.xlsx)
   node index.js status                                 Show local processing summary

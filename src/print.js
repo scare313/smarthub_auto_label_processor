@@ -38,24 +38,28 @@ function openFile(file) {
 }
 
 // Generate one combined label PDF for a set of channels.
-// `channelKeys` defaults to all channels that have unprinted orders.
-export async function printNewLabels(client, { channelKeys, date, open = true } = {}) {
-  // Gather unprinted, grouped by channel.
-  const unprinted = store.listUnprinted({ date });
-  if (!unprinted.length) {
-    log.ok("No unprinted labels. Nothing to print.");
+// - default: only UNPRINTED orders ("Print New Labels", incremental).
+// - all=true: ALL labeled orders for today's processing ("Print all today's
+//   labels", a complete master set). Still marks them printed.
+export async function printNewLabels(client, { channelKeys, date, open = true, all = false } = {}) {
+  const source = all
+    ? store.listLabeled({ date: date || printDayIST() }) // all labeled for the day
+    : store.listUnprinted({ date }); // only unprinted
+
+  if (!source.length) {
+    log.ok(all ? "No labels found for today." : "No unprinted labels. Nothing to print.");
     return [];
   }
 
   const byChannel = new Map();
-  for (const r of unprinted) {
+  for (const r of source) {
     if (channelKeys && !channelKeys.includes(r.channel)) continue;
     if (!byChannel.has(r.channel)) byChannel.set(r.channel, []);
     byChannel.get(r.channel).push(r);
   }
 
   if (!byChannel.size) {
-    log.ok("No unprinted labels for the requested channel(s).");
+    log.ok("No labels for the requested channel(s).");
     return [];
   }
 
@@ -65,7 +69,7 @@ export async function printNewLabels(client, { channelKeys, date, open = true } 
   for (const [channelKey, orders] of byChannel) {
     const channel = resolveChannel(channelKey);
     const ids = orders.map((o) => o.customerShipmentId);
-    log.step(`[${channelKey}] Combining ${ids.length} unprinted label(s)...`);
+    log.step(`[${channelKey}] Combining ${ids.length} ${all ? "" : "unprinted "}label(s)...`);
 
     let url;
     try {
@@ -84,7 +88,8 @@ export async function printNewLabels(client, { channelKeys, date, open = true } 
     const dayDir = path.join(LABELS_DIR, day);
     fs.mkdirSync(dayDir, { recursive: true });
     const batchId = `${channelKey}-${stamp.slice(11)}`;
-    const file = path.join(dayDir, `print-${day}-${batchId}-${ids.length}orders.pdf`);
+    const prefix = all ? "print-all" : "print";
+    const file = path.join(dayDir, `${prefix}-${day}-${batchId}-${ids.length}orders.pdf`);
     fs.writeFileSync(file, bytes);
 
     // Pick manifest for exactly these orders, saved alongside the labels so the
