@@ -14,6 +14,18 @@ import { store } from "./store.js";
 import { log } from "./log.js";
 import { rowsFromOrders, writeRowsToXlsx } from "./picklist.js";
 
+// Today's date in IST (Asia/Kolkata) as YYYY-MM-DD — used to group print output
+// by the day it was PRINTED (not by each order's ship date), so a day's morning
+// and afternoon prints always stay in the same folder.
+function printDayIST() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 function openFile(file) {
   // Windows: `start` opens with the default app (PDF viewer).
   if (process.platform === "win32") {
@@ -65,7 +77,10 @@ export async function printNewLabels(client, { channelKeys, date, open = true } 
     }
     const bytes = await client.downloadBytes(url);
 
-    const day = orders[0].date || date || "undated";
+    // Group by the date we are PRINTING (today, IST), so all of a day's prints
+    // — morning and afternoon — land in the same folder regardless of each
+    // order's ship date.
+    const day = printDayIST();
     const dayDir = path.join(LABELS_DIR, day);
     fs.mkdirSync(dayDir, { recursive: true });
     const batchId = `${channelKey}-${stamp.slice(11)}`;
