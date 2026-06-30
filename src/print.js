@@ -88,6 +88,15 @@ export async function printNewLabels(client, { channelKeys, date, open = true } 
       log.err(`[${channelKey}] Pick manifest failed: ${e.message}`);
     }
 
+    // Append to the day's print log (cumulative, never overwritten) so there's
+    // an end-of-day record of how many labels were printed and at what time.
+    try {
+      const logLine = `${new Date().toISOString()}\t${channelKey}\t${ids.length} orders\t${path.basename(file)}\t${orders.map((o) => o.orderId).join(",")}\n`;
+      fs.appendFileSync(path.join(dayDir, `print-log-${day}.tsv`), logLine);
+    } catch (e) {
+      log.warn(`[${channelKey}] Could not write print log: ${e.message}`);
+    }
+
     // Mark printed only AFTER the PDF is safely written.
     store.markPrinted(ids, batchId);
     store.audit(channelKey, "printed", `${ids.length} -> ${path.basename(file)}`);
