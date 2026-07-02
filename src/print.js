@@ -68,8 +68,12 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
 
   for (const [channelKey, orders] of byChannel) {
     const channel = resolveChannel(channelKey);
+    // Sort by SKU so the combined PDF (which SmartHub renders in orderIds order)
+    // comes out grouped by SKU, matching the pick manifest.
+    const skuOf = (o) => String((o.lineItems && o.lineItems[0] && o.lineItems[0].msku) || "~");
+    orders.sort((a, b) => skuOf(a).localeCompare(skuOf(b)));
     const ids = orders.map((o) => o.customerShipmentId);
-    log.step(`[${channelKey}] Combining ${ids.length} ${all ? "" : "unprinted "}label(s)...`);
+    log.step(`[${channelKey}] Combining ${ids.length} ${all ? "" : "unprinted "}label(s)... (SKU-sorted)`);
 
     let url;
     try {
