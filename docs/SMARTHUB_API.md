@@ -136,56 +136,7 @@
 **Response**
 ```json
 {
-  "SH_DECOUPLE_DOWNLOADS_PAGE_1375961": "boolean",
-  "ONSITE_WMS_MIGRATE_AUDIT_PAGE_585501": "boolean",
-  "ONSITE_WMS_MIGRATE_POD_HANDOVER_992473": "boolean",
-  "SH_INVENTORY_AUDIT_ACCOUNT_MARKETPLACE_FILTER_1413732": "boolean",
-  "SH_DECOUPLE_LAYOUT_PACK_1420612": "boolean",
-  "SH_DECOUPLE_HOLIDAYS_PAGE_1384834": "boolean",
-  "ONSITE_WMS_BULK_PACKING_NEW_355846": "boolean",
-  "ONSITE_WMS_RETURNS_SUMMARY_484429": "boolean",
-  "SH_CATALOG_DASHBOARD_1353325": "boolean",
-  "SF_DECOUPLE_LAYOUT_HOLIDAYS_1371041": "boolean",
-  "SH_PROJECT_WARP_WMS_1366455": "boolean",
-  "SC_ALLOW_FRAGILE_ATTRIBUTE_PER_PACKAGE_913408": "boolean",
-  "YOJAKA_INVENTORY_UNMANAGED_MODE_1397814": "boolean",
-  "SH_MANAGE_CATALOG_ACCOUNT_MARKETPLACE_FILTER_1413725": "boolean",
-  "ONSITE_WMS_LOCALE_BASED_PRODUCT_TITLE_565648": "boolean",
-  "SHIP_LABEL_PDF_PRINT_780772": "boolean",
-  "SF_DECOUPLE_LAYOUT_ONBOARDING_1419773": "boolean",
-  "SH_BULK_PACK_BULK_EDIT_EASYSHIP_PICKUP_SLOT_1394628": "boolean",
-  "SF_DECOUPLE_LAYOUTS_PAGE_1411515": "boolean",
-  "SF_DECOUPLE_UI_PICK_1374252": "boolean",
-  "SIMPLE_BIN_COUNT_355845": "boolean",
-  "ONE_CROSS_INVENTORY_UPDATE_SMARTHUB_OMS_1159251": "boolean",
-  "SH_LOW_INVENTORY_1353703": "boolean",
-  "SH_ORDER_SUMMARY_ACCOUNT_MARKETPLACE_FILTER_1411601": "boolean",
-  "ONSITE_WMS_HAZMAT_775387": "boolean",
-  "SAFET_ENABLED_ON_WAREHOUSE_TYPE_771963": "boolean",
-  "SF_DECOUPLE_LAYOUT_PICK_1304615": "boolean",
-  "SELLERFLEX_GEN_AI_Q_AND_A_1339173": "boolean",
-  "LPS_DARU_NAWS_MIGRATION_AWUI_1375960": "boolean",
-  "ONSITE_WMS_MIGRATE_ACCESS_MANAGEMENT_NEW_356028": "boolean",
-  "SF_DECOUPLE_LAYOUT_PD_1320435": "boolean",
-  "RAPID_HANDOVER_MIGRATION_1101861": "boolean",
-  "ONSITE_WMS_MIGRATE_VIEW_ALL_TRANSFERS_NEW_356020": "boolean",
-  "LARDER_CATALOG_REQUESTS_NEW_364426": "boolean",
-  "SH_PROJECT_WARP_OMS_1366454": "boolean",
-  "ONSITE_WMS_MIGRATE_SHIP_NEW_352804": "boolean",
-  "SH_PRINT_PICKLIST_1252698": "boolean",
-  "SH_CONTACT_US_PAGE_1286992": "boolean",
-  "SH_PRINT_DOWNLOAD_DECOUPLING_1373645": "boolean",
-  "SH_ANALYTICS_TAB_1353691": "boolean",
-  "SMART_HUB_DASHBOARD_1353701": "boolean",
-  "ONSITE_WMS_MIGRATE_CANCEL_ORDER_NEW_902500": "boolean",
-  "ONSITE_WMS_LOS_TRAFFIC_SHIFTING_NAWS_918809": "boolean",
-  "SH_ALL_ORDERS_ACCOUNT_MARKETPLACE_FILTER_1413091": "boolean",
-  "SF_DECOUPLE_LAYOUT_INBOUND_1400141": "boolean",
-  "SF_DECOUPLE_LAYOUT_PRINTER_1409510": "boolean",
-  "SH_BULK_PACK_ACCOUNT_MARKETPLACE_FILTER_1413733": "boolean",
-  "SF_VIEW_ON_AMAZON_FIX_1420001": "boolean",
-  "ONSITE_WMS_MIGRATE_HELP_PAGE_NEW_352802": "boolean",
-  "SF_DECOUPLE_LAYOUT_USER_MANAGEMENT_1412372": "boolean"
+  "<id>": "boolean"
 }
 ```
 
@@ -210,7 +161,9 @@
 **Response**
 ```json
 {
-  "<id>": "boolean"
+  "alertOnCurrentCycle": "boolean",
+  "strikeOnPreviousCycle": "boolean",
+  "previousCycleId": "number"
 }
 ```
 
@@ -221,7 +174,7 @@
 **Response**
 ```json
 {
-  "<id>": {
+  "localeDropdown": {
     "selectedDropdownItem": "string",
     "dropdownItems": [
       {
@@ -229,7 +182,22 @@
         "value": "string"
       }
     ]
-  }
+  },
+  "userLocale": "string",
+  "displayableWarehouseInfoList": [
+    {
+      "warehouseId": "string",
+      "displayName": "string",
+      "address": {
+        "line1": "string",
+        "line2": "string",
+        "line3": "string",
+        "city": "string",
+        "pinCode": "string"
+      }
+    }
+  ],
+  "multiWarehouseUser": "boolean"
 }
 ```
 
@@ -307,7 +275,65 @@
 **Response**
 ```json
 {
-  "<id>": "string"
+  "warehouseId": "string",
+  "displayWarehouseName": "string",
+  "warehouseTimezone": "string",
+  "warehouseType": "string",
+  "warehouseIntegrator": "string",
+  "warehouseOwnerId": "string",
+  "warehouseTags": [],
+  "warehouseSalesChannels": [
+    {
+      "stringId": "string",
+      "value": "string",
+      "selfShip": "boolean"
+    }
+  ],
+  "orderAttributes": [
+    {
+      "stringId": "string",
+      "value": "string"
+    }
+  ],
+  "countryCode": "string",
+  "dimensionUnitDisplayPreferences": {
+    "defaultLengthUnit": "string",
+    "defaultWeightUnit": "string",
+    "validLengthUnits": [
+      "string"
+    ],
+    "validWeightUnits": [
+      "string"
+    ]
+  },
+  "efpInventoryAPIIntegrationEnabled": "boolean",
+  "primeBadgeStatus": "null",
+  "platform": "string",
+  "businessEntity": "string",
+  "companyDetails": {
+    "companies": {},
+    "locationCompanyMappings": {},
+    "merchantCompanyMappings": {}
+  },
+  "autoMerchantSelectionForInventoryAdjustmentEnabled": "boolean",
+  "preInboundInvoiceUploadEnabled": "boolean",
+  "userMLFSeller": "boolean",
+  "templateBasedGiftMessageActive": "boolean",
+  "handoverSidelineEnabled": "boolean",
+  "customerInvoicePrintingRequired": "boolean",
+  "setupPending": "boolean",
+  "flexComboEnabled": "boolean",
+  "onlyMFNSalesChannelSupported": "boolean",
+  "primeBadgeCheckEnabled": "boolean",
+  "printerResolutionSelectionEnabled": "boolean",
+  "spooLabelScanEnabled": "boolean",
+  "uvBoxFeatureEnabled": "boolean",
+  "packingSlipGenerationAllowed": "boolean",
+  "rapidPodHandoverEnabled": "boolean",
+  "mpsEnabled": "boolean",
+  "gettingStartedEnabledForLocationMarketplace": "boolean",
+  "mrpEnabledForNonPharmaNode": "boolean",
+  "safetEnabled": "boolean"
 }
 ```
 
@@ -353,7 +379,13 @@
 ```json
 [
   {
-    "<id>": "number"
+    "startTime": "number",
+    "endTime": "number",
+    "newOrders": "number",
+    "pickedOrders": "number",
+    "totalOrders": "number",
+    "prePulledOrderCount": "number",
+    "pickTasks": "null"
   }
 ]
 ```
@@ -383,7 +415,9 @@
     "readableCreationDate": "null",
     "pickTaskNotGenerated": "boolean",
     "displayableSalesChannel": {
-      "<id>": "string"
+      "name": "string",
+      "isSelfShip": "boolean",
+      "salesChannel": "enum:\"MFN\""
     }
   }
 ]
@@ -415,7 +449,9 @@
     "readableCreationDate": "null",
     "pickTaskNotGenerated": "boolean",
     "displayableSalesChannel": {
-      "<id>": "string"
+      "name": "string",
+      "isSelfShip": "boolean",
+      "salesChannel": "enum:\"MFN\""
     }
   }
 ]
@@ -436,7 +472,1795 @@
 **Response**
 ```json
 {
-  "<id>": "number"
+  "expectedShipEpoch": "number",
+  "numberOfShipments": "number",
+  "numberOfShipmentsPacked": "number",
+  "numberOfConsumerCancelledShipments": "number",
+  "numberOfSellerCancelledShipments": "number",
+  "skuCustomerShipmentMapping": {
+    "<id>": {
+      "DKTzST1qJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "Dr7rW11TJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "D2pQm11bJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "DLzDKm1FJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "DTrSCS1WJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "DZRhpJ1pJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      },
+      "DjL6CY1zJ": {
+        "customerShipmentId": "string",
+        "orderId": "string",
+        "marketplaceId": "string",
+        "shipmentType": "number",
+        "salesChannel": "enum:\"MFN\"",
+        "shipmentStatus": "enum:\"BOUND\"",
+        "boxType": "enum:\"CUSTOM\"",
+        "packingSlipDetails": {
+          "fileName": "string",
+          "fileEncryptionType": "string",
+          "bucketName": "string"
+        },
+        "marketplaceInvoiceId": "string",
+        "shipmentTotalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shipmentTotalTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "shippingChargePrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "shippingChargeTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "originalOrderDetails": "null",
+        "shippingChargeTaxBreakup": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "totalScannedQuantity": "number",
+        "boxRecommendationAttributes": "null",
+        "shipmentCreationEpoch": "number",
+        "invoiceCreationEpoch": "number",
+        "encryptedShipToAddress": "null",
+        "shipToAddress": "null",
+        "expectedDeliveryEpoch": "null",
+        "displayableSalesChannel": {
+          "name": "string",
+          "isSelfShip": "boolean",
+          "salesChannel": "enum:\"MFN\""
+        },
+        "packageWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "itemsTotalWeight": {
+          "value": "number",
+          "unit": "enum:\"g\""
+        },
+        "packageLength": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageWidth": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "packageHeight": {
+          "value": "number",
+          "unit": "enum:\"CM\""
+        },
+        "pickupSlot": "null",
+        "pickupSlotDateStartEpoch": "null",
+        "recommendedSlotToPick": "null",
+        "boxName": "null",
+        "isComboShipment": "boolean",
+        "isReturnAuthenticityTagRequired": "boolean",
+        "returnAuthenticityTagRequiredSkus": [],
+        "orderingOrderIds": [
+          "string"
+        ],
+        "pickTaskId": "string",
+        "selfShip": "boolean",
+        "hazmat": "boolean",
+        "fastTrack": "boolean",
+        "gift": "boolean",
+        "serialNumScannedForShipment": "boolean",
+        "prescriptionRequired": "boolean",
+        "shipLabelGenerated": "boolean",
+        "packingSlipRequired": "boolean",
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "packingSlipRequiredForPharma": "boolean",
+        "outboundVerificationRequired": "boolean"
+      }
+    }
+  },
+  "skuCustomerShipmentOrder": {
+    "<id>": [
+      "string"
+    ]
+  },
+  "customerShipmentSkuMapping": {
+    "DKcbFjj3J": {
+      "976fee95-533e-4aaa-9191-f659c4061550": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DY4Zmk1FJ": {
+      "39217580-ffc2-4357-ab6e-0f628624de1b": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      },
+      "1529743b-d120-41f3-be53-b4320bb828f3": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DT47ml1FJ": {
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DKTzST1qJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DYRmpp1vJ": {
+      "976fee95-533e-4aaa-9191-f659c4061550": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DrgClY1vJ": {
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DTrSCS1WJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "D54H8d1MJ": {
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "Djlr821cJ": {
+      "39217580-ffc2-4357-ab6e-0f628624de1b": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      },
+      "1529743b-d120-41f3-be53-b4320bb828f3": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "D2qZWb1yJ": {
+      "1529743b-d120-41f3-be53-b4320bb828f3": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DF1b2NjCJ": {
+      "976fee95-533e-4aaa-9191-f659c4061550": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DZJSmk11J": {
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "Dr7rW11TJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "D2pQm11bJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DFHJgy1rJ": {
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DjL6CY1zJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      },
+      "dc3a7d43-5dee-43c3-9f7e-32fad2cf5842": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DLzDKm1FJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    },
+    "DZRhpJ1pJ": {
+      "0364c3b3-2b0a-415d-aa91-f717ee0137a7": {
+        "sku": "string",
+        "wsku": "null",
+        "scannedId": "null",
+        "title": "null",
+        "binDispositionQuantityMap": {},
+        "fnsku": "null",
+        "msku": "null",
+        "requestedQuantity": "number",
+        "scannedQuantity": "number",
+        "giftMessageTokenList": "null",
+        "length": "null",
+        "width": "null",
+        "height": "null",
+        "boxesPerUnit": "number",
+        "totalPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxPrice": {
+          "unit": "enum:\"INR\"",
+          "value": "number"
+        },
+        "totalTaxBreakdown": [
+          {
+            "taxBreakupType": "string",
+            "value": {
+              "unit": "enum:\"INR\"",
+              "value": "number"
+            }
+          }
+        ],
+        "giftWrapPrice": "null",
+        "giftWrapTaxPrice": "null",
+        "giftWrapTaxBreakdown": "null",
+        "unmanagedAtDrop": "null",
+        "giftWrap": "boolean"
+      }
+    }
+  },
+  "customerShipmentExpectedItemsAggregatedQuantity": {
+    "DKcbFjj3J": "number",
+    "DY4Zmk1FJ": "number",
+    "DT47ml1FJ": "number",
+    "DKTzST1qJ": "number",
+    "DYRmpp1vJ": "number",
+    "DrgClY1vJ": "number",
+    "DTrSCS1WJ": "number",
+    "D54H8d1MJ": "number",
+    "Djlr821cJ": "number",
+    "D2qZWb1yJ": "number",
+    "DF1b2NjCJ": "number",
+    "DZJSmk11J": "number",
+    "Dr7rW11TJ": "number",
+    "D2pQm11bJ": "number",
+    "DFHJgy1rJ": "number",
+    "DjL6CY1zJ": "number",
+    "DLzDKm1FJ": "number",
+    "DZRhpJ1pJ": "number"
+  },
+  "customerShipmentScannedItemsAggregatedQuantity": {
+    "DKcbFjj3J": "number",
+    "DY4Zmk1FJ": "number",
+    "DT47ml1FJ": "number",
+    "DKTzST1qJ": "number",
+    "DYRmpp1vJ": "number",
+    "DrgClY1vJ": "number",
+    "DTrSCS1WJ": "number",
+    "D54H8d1MJ": "number",
+    "Djlr821cJ": "number",
+    "D2qZWb1yJ": "number",
+    "DF1b2NjCJ": "number",
+    "DZJSmk11J": "number",
+    "Dr7rW11TJ": "number",
+    "D2pQm11bJ": "number",
+    "DFHJgy1rJ": "number",
+    "DjL6CY1zJ": "number",
+    "DLzDKm1FJ": "number",
+    "DZRhpJ1pJ": "number"
+  },
+  "externalIdToSkuMapping": "null",
+  "scannableIdToEskuMapping": {
+    "CAP-RAIN-BASEBALL-BLACK": [
+      "string"
+    ],
+    "CAP-FULLNET-BLACK": [
+      "string"
+    ],
+    "CAP-FULLNET-WHITE": [
+      "string"
+    ],
+    "B097YT1CTH": [
+      "string"
+    ],
+    "OCAP-RAIN-BASEBALL-NAVYBLUE": [
+      "string"
+    ],
+    "CAP-RAIN-BASEBALL-GREY": [
+      "string"
+    ]
+  },
+  "eskuToEskuDetailMap": {
+    "<id>": {
+      "esku": "string",
+      "wsku": "null",
+      "channelSku": "null",
+      "title": "null",
+      "msku": "string",
+      "imageUrl": "null",
+      "productTitle": "string",
+      "hazmatLabels": [],
+      "mrp": "null"
+    }
+  },
+  "trackingIdToCustomerShipmentIdMap": {},
+  "bulkInvoiceAndShipLabelDocumentMetadata": "null",
+  "packedCustomerShipmentMapping": {
+    "DLntmG1lJ": {
+      "customerShipmentId": "string",
+      "orderId": "string",
+      "lineItems": [
+        {
+          "eskuId": "string",
+          "quantity": "number",
+          "unmanagedAtDrop": "null"
+        }
+      ],
+      "packageWeight": {
+        "value": "number",
+        "unit": "enum:\"g\""
+      },
+      "packageLength": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageWidth": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageHeight": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "boxName": "enum:\"CustomBox\"",
+      "boxType": "enum:\"CUSTOM\"",
+      "selectedPickupSlot": {
+        "endEpoch": "number",
+        "startEpoch": "number",
+        "price": "null"
+      },
+      "salesChannel": "enum:\"MFN\"",
+      "isSelfShip": "boolean",
+      "packedDate": "number",
+      "orderingOrderIds": [
+        "string"
+      ],
+      "pickTaskId": "string",
+      "carrierName": "string"
+    },
+    "DFXT0t1DJ": {
+      "customerShipmentId": "string",
+      "orderId": "string",
+      "lineItems": [
+        {
+          "eskuId": "string",
+          "quantity": "number",
+          "unmanagedAtDrop": "null"
+        }
+      ],
+      "packageWeight": {
+        "value": "number",
+        "unit": "enum:\"g\""
+      },
+      "packageLength": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageWidth": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageHeight": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "boxName": "enum:\"CustomBox\"",
+      "boxType": "enum:\"CUSTOM\"",
+      "selectedPickupSlot": {
+        "endEpoch": "number",
+        "startEpoch": "number",
+        "price": "null"
+      },
+      "salesChannel": "enum:\"MFN\"",
+      "isSelfShip": "boolean",
+      "packedDate": "number",
+      "orderingOrderIds": [
+        "string"
+      ],
+      "pickTaskId": "string",
+      "carrierName": "string"
+    },
+    "DptlmD1BJ": {
+      "customerShipmentId": "string",
+      "orderId": "string",
+      "lineItems": [
+        {
+          "eskuId": "string",
+          "quantity": "number",
+          "unmanagedAtDrop": "null"
+        }
+      ],
+      "packageWeight": {
+        "value": "number",
+        "unit": "enum:\"g\""
+      },
+      "packageLength": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageWidth": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "packageHeight": {
+        "value": "number",
+        "unit": "enum:\"CM\""
+      },
+      "boxName": "enum:\"RecommendedPackage\"",
+      "boxType": "enum:\"CUSTOM\"",
+      "selectedPickupSlot": {
+        "endEpoch": "number",
+        "startEpoch": "number",
+        "price": "null"
+      },
+      "salesChannel": "enum:\"MFN\"",
+      "isSelfShip": "boolean",
+      "packedDate": "number",
+      "orderingOrderIds": [
+        "string"
+      ],
+      "pickTaskId": "string",
+      "carrierName": "string"
+    }
+  }
 }
 ```
 
@@ -479,7 +2303,37 @@ _(not captured)_
 **Response**
 ```json
 {
-  "<id>": "null"
+  "boxDetailsMap": "null",
+  "boxDetailsByBoxGroupMap": {
+    "System": [
+      {
+        "boxBarcode": "string",
+        "boxName": "enum:\"CUSTOM\"",
+        "bindingExclusion": "null",
+        "bindingInclusion": "null",
+        "boxCategory": "string",
+        "boxCost": "number",
+        "baseCurrencyCode": "null",
+        "maxHoldingQty": "number",
+        "maxHoldingWeight": "number",
+        "boxType": "enum:\"CUSTOM\"",
+        "boxWeight": "number",
+        "weightUOM": "string",
+        "internalLength": "number",
+        "internalWidth": "number",
+        "internalHeight": "number",
+        "externalLength": "number",
+        "externalWidth": "number",
+        "externalHeight": "number",
+        "dimensionUOM": "string",
+        "isActive": "boolean",
+        "isVirtual": "boolean",
+        "maxHoldingValue": "number",
+        "volume": "number"
+      }
+    ]
+  },
+  "lastEvaluatedItemKey": "null"
 }
 ```
 
@@ -491,7 +2345,10 @@ _(not captured)_
 {
   "sidelineReasons": [
     {
-      "<id>": "string"
+      "optionId": "string",
+      "translatableString": "string",
+      "displayableInPackPage": "boolean",
+      "pharmacyOnly": "boolean"
     }
   ]
 }
@@ -516,9 +2373,65 @@ _(not captured)_
 {
   "shipmentIdToInvoiceDetailsMap": {
     "DKTzST1qJ": {
-      "<id>": {
-        "<id>": "string"
-      }
+      "storageDetails": {
+        "storageType": "string",
+        "storageLocation": "string",
+        "fileName": "string",
+        "encryptionType": "string"
+      },
+      "orderChargeList": [
+        {
+          "orderChargeType": "string",
+          "name": "string",
+          "amount": {
+            "value": "number",
+            "currency": "string"
+          },
+          "tax": {
+            "amount": {
+              "value": "number",
+              "currency": "string"
+            },
+            "name": "string",
+            "rate": "number",
+            "breakup": [
+              {
+                "amount": "…",
+                "name": "…",
+                "rate": "…"
+              }
+            ],
+            "type": "null"
+          }
+        }
+      ],
+      "lineItemChargesMap": {
+        "1": [
+          {
+            "amount": {
+              "value": "number",
+              "currency": "string"
+            },
+            "tax": {
+              "amount": {
+                "value": "…",
+                "currency": "…"
+              },
+              "name": "string",
+              "rate": "number",
+              "breakup": [
+                "…"
+              ],
+              "type": "null"
+            },
+            "lineItemChargeType": "string",
+            "name": "string",
+            "type": "null"
+          }
+        ]
+      },
+      "invoiceCreationTimestamp": "number",
+      "invoiceId": "string"
     }
   },
   "shipmentIdToErrorMap": {}
@@ -533,7 +2446,11 @@ _(not captured)_
 {
   "shipLabelRequests": [
     {
-      "<id>": "string"
+      "selectedBoxId": "enum:\"RecommendedPackage\"",
+      "customerShipmentId": "string",
+      "shippingLabelPrinterResolution": "number",
+      "pickupSlotId": "string",
+      "salesChannel": "enum:\"MFN\""
     }
   ]
 }
@@ -545,7 +2462,24 @@ _(not captured)_
   "shipmentIdToPackageTrackingInfoListMap": {
     "DKTzST1qJ": [
       {
-        "<id>": "string"
+        "packageId": "string",
+        "trackingId": "string",
+        "labels": [
+          {
+            "labelPayload": {
+              "payload": "string",
+              "encodingType": "enum:\"KMS_B64\""
+            },
+            "labelFormat": "string"
+          }
+        ],
+        "pickUpEpochSeconds": "number",
+        "carrierPickupWindow": {
+          "startTimeInEpochSeconds": "number",
+          "endTimeInEpochSeconds": "number"
+        },
+        "shipMethod": "null",
+        "carrierName": "string"
       }
     ]
   },
@@ -571,7 +2505,31 @@ _(not captured)_
   "shipmentIdToPickupSlotsByPackageListMap": {
     "DKTzST1qJ": [
       {
-        "<id>": "string"
+        "packageId": "string",
+        "pickupSlotsList": [
+          {
+            "slotId": "string",
+            "carrierName": "null",
+            "shipBy": "enum:\"MARKETPLACE\"",
+            "pickupTimeStart": "number",
+            "pickupTimeEnd": "number",
+            "expectedDeliveryStartTimestamp": "null",
+            "expectedDeliveryEndTimestamp": "null",
+            "totalCharge": "null",
+            "billedWeight": "null"
+          }
+        ],
+        "recommendedPickupSlot": {
+          "slotId": "string",
+          "carrierName": "null",
+          "shipBy": "enum:\"MARKETPLACE\"",
+          "pickupTimeStart": "number",
+          "pickupTimeEnd": "number",
+          "expectedDeliveryStartTimestamp": "null",
+          "expectedDeliveryEndTimestamp": "null",
+          "totalCharge": "null",
+          "billedWeight": "null"
+        }
       }
     ]
   },
@@ -629,7 +2587,20 @@ _(not captured)_
 ```json
 [
   {
-    "<id>": "string"
+    "shipmentId": "string",
+    "trackingId": "null",
+    "customerOrderId": "string",
+    "isFastTrack": "boolean",
+    "cancellationReason": "enum:\"MARKETPLACE_INITIATED\"",
+    "displayableSalesChannel": {
+      "name": "string",
+      "isSelfShip": "boolean",
+      "salesChannel": "enum:\"MFN\""
+    },
+    "pendingActionReason": "null",
+    "orderingOrderIds": [
+      "string"
+    ]
   }
 ]
 ```
@@ -642,7 +2613,39 @@ _(not captured)_
 ```json
 [
   {
-    "<id>": "number"
+    "pickupTime": "number",
+    "totalOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "pendingOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "newOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "assignedToPicklistOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "sidelinedOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "packedOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "shippedOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    },
+    "cancelledOrders": {
+      "total": "number",
+      "fastTrack": "number"
+    }
   }
 ]
 ```
@@ -656,18 +2659,75 @@ _(not captured)_
 **Response**
 ```json
 {
-  "<id>": "string"
+  "scannedId": "string",
+  "isUniqueProduct": "null",
+  "eskuDetailList": [
+    {
+      "title": "string",
+      "unlocalizedTitle": "string",
+      "imageUrl": "null",
+      "asin": "null",
+      "channelSku": "string",
+      "channelName": "string",
+      "length": {
+        "measure": "number",
+        "unitOfMeasure": "enum:\"CM\"",
+        "dimensionOverrideType": "null"
+      },
+      "width": {
+        "measure": "number",
+        "unitOfMeasure": "enum:\"CM\"",
+        "dimensionOverrideType": "null"
+      },
+      "height": {
+        "measure": "number",
+        "unitOfMeasure": "enum:\"CM\"",
+        "dimensionOverrideType": "null"
+      },
+      "weight": {
+        "measure": "number",
+        "unitOfMeasure": "enum:\"kg\"",
+        "dimensionOverrideType": "null"
+      },
+      "externalIds": [],
+      "validDimensions": "boolean",
+      "shelfLifeInDays": "null",
+      "amazonPadTimeInDays": "null",
+      "amazonProductGroupType": "string",
+      "amazonProductSubcategoryId": "null",
+      "hasMRP": "boolean",
+      "temperatureRating": "null",
+      "productDimensions": "null",
+      "numberOfBoxes": "null",
+      "boxDimensionsList": "null",
+      "medicineClassification": "null",
+      "hazmat": "boolean",
+      "mid": "string",
+      "inboundValidationRequired": "boolean",
+      "batchIdRequired": "boolean",
+      "expirable": "boolean",
+      "esku": "string",
+      "msku": "string",
+      "renewedScanRequired": "boolean",
+      "mrpVerificationRequired": "boolean",
+      "expiryDateVerificationRequired": "boolean",
+      "wskuDetail": "null",
+      "batchIdVerificationRequired": "boolean",
+      "activeCombo": "boolean",
+      "active": "boolean"
+    }
+  ]
 }
 ```
 
 #### `GET /api/manage-catalog/items/{id}`
 - Source: `Inventory_Update.har` · status 200
-- Query: `?relationship-type=BUNDLE&query=query getCatalogItemQuery {  getCatalogItemById(id:"{id}", dataEnrichmentAttributes: {listings:ALL relationships:ID_ONLY}) {responseType catalogItem{id catalogOwnerId customId status identifiers{type value} attributes{title description imageURLs isBestSeller measureme`
+- Query: `?relationship-type=BUNDLE&query=query getCatalogItemQuery {  getCatalogItemById(id:"{id}", dataEnrichmentAttributes: {listings:ALL relationships:ID_ONLY}) {responseType catalogItem{id catalogOwnerId c…`
 
 **Response**
 ```json
 {
-  "<id>": {
+  "catalogItem": {
     "id": "string",
     "catalogOwnerId": "string",
     "customId": "string",
@@ -675,7 +2735,46 @@ _(not captured)_
     "status": "enum:\"ACTIVE\"",
     "identifiers": [],
     "attributes": {
-      "<id>": "string"
+      "title": "string",
+      "description": "null",
+      "imageURLs": "null",
+      "measurements": {
+        "dimensions": {
+          "length": {
+            "unit": "enum:\"CM\"",
+            "value": "number"
+          },
+          "width": {
+            "unit": "enum:\"CM\"",
+            "value": "number"
+          },
+          "height": {
+            "unit": "enum:\"CM\"",
+            "value": "number"
+          }
+        },
+        "weight": {
+          "unit": "enum:\"KG\"",
+          "value": "number"
+        }
+      },
+      "complianceAttributes": {
+        "priceAttributes": {
+          "isMrpRequired": "boolean",
+          "mrp": "null"
+        },
+        "isExpirable": "boolean",
+        "isLotNumberRequired": "boolean",
+        "isSerialNumberRequired": "boolean",
+        "isRenewedScanRequired": "null",
+        "isHazmat": "null"
+      },
+      "isBestSeller": "null",
+      "businessSpecificAttributes": "null",
+      "numberOfParts": "null",
+      "partAttributes": "null",
+      "localizedTitles": "null",
+      "taxAttributes": "null"
     },
     "category": {
       "id": "string",
@@ -696,7 +2795,10 @@ _(not captured)_
     "creationTimestamp": "number",
     "lastUpdateTimestamp": "number",
     "specifications": "null"
-  }
+  },
+  "catalogRelationshipItems": [],
+  "isComboSku": "boolean",
+  "isActiveComponentSku": "boolean"
 }
 ```
 
@@ -727,7 +2829,11 @@ _(not captured)_
   "status": "enum:\"SUBMITTED\"",
   "contentFileName": "null",
   "completionResult": {
-    "<id>": "null"
+    "totalSuccessfulTasks": "null",
+    "totalFailedTasks": "null",
+    "successReportUrl": "null",
+    "failureReportUrl": "null",
+    "failureMessage": "null"
   },
   "creationTimestamp": "number",
   "additionalInfo": "string"
@@ -816,7 +2922,9 @@ query GetBulkPackConfig($input: LocationConfigurationInput!) { locationConfigura
   "data": {
     "locationConfiguration": {
       "bulkPackConfiguration": {
-        "<id>": "number"
+        "apiInputSizeLimit": "number",
+        "concurrentBatches": "number",
+        "documentDownloadLimit": "number"
       }
     }
   }
@@ -837,7 +2945,11 @@ query GetPickTaskConfiguration { locationConfiguration { pickTaskConfiguration {
   "data": {
     "locationConfiguration": {
       "pickTaskConfiguration": {
-        "<id>": "boolean"
+        "areSingleAndMultiSeparated": "boolean",
+        "batchSize": "number",
+        "multiShipmentBatchSize": "number",
+        "shipmentsBatchSizeForPeak": "null",
+        "singleShipmentBatchSize": "number"
       }
     }
   }
@@ -876,15 +2988,41 @@ query GetReturn($input: GetReturnRequestInput!) { getReturn(input: $input) { ret
         "returnType": "string",
         "effectiveStatus": "string",
         "returnMetadata": {
-          "<id>": "string"
+          "returnReason": "string",
+          "fulfillmentOrderId": "string",
+          "rmaId": "null",
+          "invoiceInfo": {
+            "invoiceId": "string",
+            "invoiceCreationTimestamp": "null"
+          }
         },
         "channelReturnAttributes": {
-          "<id>": "string"
+          "merchantId": "string",
+          "shipmentId": "string",
+          "customerOrderId": "string",
+          "returnLocationId": "string",
+          "exchangeOrderId": "null",
+          "channelSku": "string",
+          "marketplaceName": "string",
+          "marketplace": "enum:\"AMAZON\"",
+          "channelName": "string",
+          "marketplaceRegion": "string"
         },
         "creationTimestamp": "number",
         "lastUpdatedTimestamp": "number",
         "returnShippingInfo": {
-          "<id>": "null"
+          "deliveryTimestamp": "null",
+          "pickupTimestamp": "null",
+          "customerDroppedOffTimestamp": "null",
+          "sellerProcessedTimestamp": "null",
+          "forwardTrackingInfo": {
+            "trackingId": "string",
+            "carrierName": "string"
+          },
+          "reverseTrackingInfo": {
+            "trackingId": "string",
+            "carrierName": "string"
+          }
         },
         "otpDetails": "null",
         "returnedWithOTP": "boolean",
@@ -937,7 +3075,28 @@ query PickTaskByFilters($input: PickTasksByFilterRequestInput!) { pickTasksByFil
   "data": {
     "pickTasksByFilter": [
       {
-        "<id>": "string"
+        "id": "string",
+        "creationEpoch": "number",
+        "expectedShipEpoch": "number",
+        "attributes": {
+          "batchSize": "number",
+          "hasFastTrackOrders": "boolean",
+          "hasGiftMessageOrders": "boolean",
+          "hasGiftOrders": "boolean",
+          "hasGiftWrapOrders": "null",
+          "hasHazmatOrders": "boolean",
+          "hasSidelineOrders": "null",
+          "hasSingleOrders": "boolean",
+          "hasTemperatureRatedOrders": "boolean",
+          "numberOfOrders": "number",
+          "salesChannelWithAttributesList": [
+            {
+              "isSelfShip": "boolean",
+              "salesChannel": "enum:\"MFN\"",
+              "displayableSalesChannel": "string"
+            }
+          ]
+        }
       }
     ]
   }
@@ -956,9 +3115,17 @@ query RetrieveBatchOrderDocuments($input: RetrieveBatchDocumentsInput!) { orderD
 ```json
 {
   "input": {
-    "<id>": [
+    "orderIds": [
       "string"
-    ]
+    ],
+    "marketplace": "enum:\"AMAZON\"",
+    "requiredDocumentTypes": [
+      "string"
+    ],
+    "preferences": {
+      "fileFormat": "enum:\"PDF\"",
+      "fileGenerationPreference": "enum:\"COMBINED\""
+    }
   }
 }
 ```
@@ -969,7 +3136,14 @@ query RetrieveBatchOrderDocuments($input: RetrieveBatchDocumentsInput!) { orderD
   "data": {
     "orderDocuments": {
       "result": {
-        "<id>": "string"
+        "fileGenerationPreference": "enum:\"COMBINED\"",
+        "ordersIncluded": [
+          "string"
+        ],
+        "fileDetails": {
+          "url": "string",
+          "urlType": "enum:\"S3_PRESIGNED_URL\""
+        }
       },
       "errors": [],
       "fileFormat": "enum:\"PDF\"",
@@ -1053,7 +3227,13 @@ mutation UpdateReturnItem($input: UpdateReturnItemRequestInput!) { updateReturnI
 ```json
 {
   "input": {
-    "<id>": "string"
+    "returnId": "string",
+    "lastUpdatedTimestamp": "number",
+    "gradingInput": {
+      "numberOfUnitsSellable": "number",
+      "numberOfUnitsUnsellable": "number"
+    },
+    "updateSellableInventory": "boolean"
   }
 }
 ```
@@ -1154,14 +3334,29 @@ mutation updateInventoryQuantity($input: UpdateInventoryRequestInput!) { updateI
 
 ---
 
+## Notes on key endpoints
+
+### GET /api/orders/details — general order listing (NOT just cancellations)
+Lists individual shipments filtered by status. Powerful: it returns the actual
+orders (with ids), unlike `orders/summary` which returns only counts.
+- **Query params:** `exSD` (expected-ship-date epoch, seconds) · `shipmentStatus`
+  (e.g. `CANCELLED`, and likely `BOUND`/`PACKED`/`SHIPPED` — confirm) ·
+  `exclusiveStartRecordNumber` (pagination cursor, start 0).
+- **Each row:** `shipmentId` (== our customerShipmentId), `customerOrderId`,
+  `trackingId`, `isFastTrack`, `cancellationReason`, `displayableSalesChannel`,
+  `orderingOrderIds`.
+- **cancellationReason values seen:** `MARKETPLACE_INITIATED` (Amazon),
+  `ORDER_DETAILS_CANCELLATION_REASON_CONSUMER_REQUESTED` (Flipkart).
+- **Use:** "Printed Cancelled" = intersect `shipmentId` (status=CANCELLED) with
+  locally printed orders. Paginate via `exclusiveStartRecordNumber` until empty.
+
 ## Coverage notes
-- `quicksight/reports/dashboards/*` return embedded QuickSight dashboard URLs/config (sales, shipping, inventory-health, return-insights, catalog, inventory-picture).
-- `manage-catalog/reports` (POST create + GET by id) drive async report/export generation (used by Returns export).
-- Inventory writes: GraphQL `updateInventoryQuantity`; catalog reads: `getInventoryItemsDetail`, `GET /api/manage-catalog/items/{id}`, `GET /api/inbound/product-details`, `GET /api/manage-catalog/jobs`.
+- `quicksight/reports/dashboards/*`: embedded QuickSight dashboards (sales, shipping, inventory-health, return-insights, catalog, inventory-picture).
+- `manage-catalog/reports` (POST create + GET by id): async report/export jobs (Returns export).
+- Inventory: GraphQL `updateInventoryQuantity` (write), `getInventoryItemsDetail`; `GET /api/manage-catalog/items/{id}`, `/api/manage-catalog/jobs`, `/api/inbound/product-details`.
 - Returns: GraphQL `SearchReturns`, `GetReturn`, `UpdateReturnItem`.
 
 ## TODO (pages to capture next)
-- Cancellations list (for "Printed Cancelled")
 - Manifest generation & handover
 - Settings / rules / auto-allocation
-- Any per-order detail / order-search endpoints
+- orders/details with other shipmentStatus values (to confirm the full order-listing use)
