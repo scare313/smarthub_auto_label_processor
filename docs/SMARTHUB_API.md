@@ -1,18 +1,16 @@
 # SmartHub Internal API — Reference
 
 > Reverse-engineered from captured browser traffic (HAR) of **smarthub.amazon.in**.
-> This documents the app's own internal API. Schemas show **field names + types**
-> (customer PII intentionally omitted; values shown only for enum-like fields).
+> Schemas show **field names + types** (customer PII omitted; values shown only for
+> enum-like fields; ID-keyed maps collapsed to one `<id>` sample). Living document.
 
 ## Conventions
 - **Base URL:** `https://smarthub.amazon.in`
 - **Auth:** Amazon SSO session cookies (httpOnly, same-origin). No bearer/CSRF header.
-  Calls must be made from an authenticated same-origin context (the app, or a
-  logged-in browser page via fetch).
 - **Content-Type:** `application/json;charset=UTF-8` for POST bodies.
-- **GraphQL:** single endpoint `POST /api/graphql`. **Responses are base64-encoded JSON** — decode before parsing.
+- **GraphQL:** single endpoint `POST /api/graphql`; **responses are base64-encoded JSON**.
 - **Timestamps:** epoch **seconds** unless noted (some slot fields use ms).
-- **salesChannel codes:** `MFN` (Amazon Easy Ship), `FKSTANDARD` (Flipkart), `MEESHO`, `FBA`. `marketplace` (for docs API): `AMAZON`, `FLIPKART`, `MEESHO`.
+- **salesChannel:** `MFN` (Amazon Easy Ship), `FKSTANDARD` (Flipkart), `MEESHO`, `FBA`. `marketplace`: `AMAZON`, `FLIPKART`, `MEESHO`.
 
 ---
 
@@ -21,7 +19,7 @@
 ### Session & User
 
 #### `GET /api/access/features`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -74,7 +72,7 @@
 ```
 
 #### `GET /api/access/operations`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -133,7 +131,7 @@
 ```
 
 #### `GET /api/access/weblabs`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -192,7 +190,7 @@
 ```
 
 #### `GET /api/help/list`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -207,7 +205,7 @@
 ```
 
 #### `GET /api/performance/status`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -217,8 +215,8 @@
 ```
 
 #### `GET /api/user/details`
-- Source: `1amazon_easy_ship.har` · observed status 200
-- Query string: `?isV2=true`
+- Source: `1amazon_easy_ship.har` · status 200
+- Query: `?isV2=true`
 
 **Response**
 ```json
@@ -236,7 +234,7 @@
 ```
 
 #### `POST /api/translations`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Request body**
 ```json
@@ -304,7 +302,7 @@
 ### Warehouse
 
 #### `GET /api/warehouse/details`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -314,7 +312,7 @@
 ```
 
 #### `GET /api/warehouse/notifications/banner`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -324,24 +322,32 @@
   "endEpochInMillis": "number",
   "title": "string",
   "description": "string",
-  "redirectUrl": "string",
-  "redirectUrlText": "string",
+  "redirectUrl": "null",
+  "redirectUrlText": "null",
   "isClosable": "boolean",
   "page": "string",
   "severity": "string",
   "creationEpochInMillis": "number",
   "lastUpdatedEpochInMillis": "number",
-  "type": "null",
+  "type": "string",
   "warehouseIdListStorage": "null",
   "warehouseIdListFilePath": "null",
-  "renderParams": "null"
+  "renderParams": {
+    "date": "string",
+    "metricType": "string",
+    "backlog": "string",
+    "warehouseId": "string",
+    "cpt": "string",
+    "startTime": "string",
+    "breachValue": "string"
+  }
 }
 ```
 
 ### Pick
 
 #### `GET /api/pick/cpts/recommended`
-- Source: `1amazon_easy_ship_missed.har` · observed status 200
+- Source: `1amazon_easy_ship_missed.har` · status 200
 
 **Response**
 ```json
@@ -353,7 +359,7 @@
 ```
 
 #### `GET /api/pick/lists/missed`
-- Source: `1amazon_easy_ship_missed.har` · observed status 200
+- Source: `1amazon_easy_ship_missed.har` · status 200
 
 **Response**
 ```json
@@ -384,8 +390,8 @@
 ```
 
 #### `GET /api/pick/lists/recommended`
-- Source: `complete.har` · observed status 200
-- Query string: `?pickupTimes[0]=1781937000&pickupTimes[1]=1781980199&createPickListCardType=UPCOMING`
+- Source: `complete.har` · status 200
+- Query: `?pickupTimes[0]=1781937000&pickupTimes[1]=1781980199&createPickListCardType=UPCOMING`
 
 **Response**
 ```json
@@ -416,7 +422,7 @@
 ```
 
 #### `GET /api/pick/orders/missed/count`
-- Source: `1amazon_easy_ship_missed.har` · observed status 200
+- Source: `1amazon_easy_ship_missed.har` · status 200
 
 **Response**
 ```json
@@ -424,8 +430,8 @@
 ```
 
 #### `GET /api/pick/picktaskid/validate`
-- Source: `1amazon_easy_ship.har` · observed status 200
-- Query string: `?pickTaskId=P1781869748616388`
+- Source: `1amazon_easy_ship.har` · status 200
+- Query: `?pickTaskId=P1781869748616388`
 
 **Response**
 ```json
@@ -435,13 +441,13 @@
 ```
 
 #### `GET /api/pick/throttling-status`
-- Source: `1amazon_easy_ship_missed.har` · observed status 200
+- Source: `1amazon_easy_ship_missed.har` · status 200
 
 **Response**
 _(not captured)_
 
 #### `POST /api/pick/list`
-- Source: `1amazon_easy_ship_missed.har` · observed status 200
+- Source: `1amazon_easy_ship_missed.har` · status 200
 
 **Request body**
 ```json
@@ -468,7 +474,7 @@ _(not captured)_
 ### Pack (config)
 
 #### `GET /api/pack/boxes`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Response**
 ```json
@@ -478,7 +484,7 @@ _(not captured)_
 ```
 
 #### `GET /api/pack/sideline-reasons`
-- Source: `smarthub.amazon.in.har` · observed status 200
+- Source: `smarthub.amazon.in.har` · status 200
 
 **Response**
 ```json
@@ -494,7 +500,7 @@ _(not captured)_
 ### Bulk-Pack (packing & shipping)
 
 #### `POST /api/bulk-pack/generate-invoices`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Request body**
 ```json
@@ -520,7 +526,7 @@ _(not captured)_
 ```
 
 #### `POST /api/bulk-pack/generate-shiplabel`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Request body**
 ```json
@@ -548,7 +554,7 @@ _(not captured)_
 ```
 
 #### `POST /api/bulk-pack/list-pickup-slots`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Request body**
 ```json
@@ -574,7 +580,7 @@ _(not captured)_
 ```
 
 #### `POST /api/bulk-pack/packages`
-- Source: `1amazon_easy_ship.har` · observed status 200
+- Source: `1amazon_easy_ship.har` · status 200
 
 **Request body**
 ```json
@@ -616,8 +622,8 @@ _(not captured)_
 ### Orders
 
 #### `GET /api/orders/summary`
-- Source: `1amazon_easy_ship.har` · observed status 200
-- Query string: `?date=2026-06-20&salesChannelFilters[0].salesChannel=MFN&salesChannelFilters[0].isSelfShip=false`
+- Source: `1amazon_easy_ship.har` · status 200
+- Query: `?date=2026-06-20&salesChannelFilters[0].salesChannel=MFN&salesChannelFilters[0].isSelfShip=false`
 
 **Response**
 ```json
@@ -627,6 +633,146 @@ _(not captured)_
   }
 ]
 ```
+
+### Inventory & Catalog
+
+#### `GET /api/inbound/product-details`
+- Source: `Inventory_Update.har` · status 200
+- Query: `?scanned-id=CAP-RAIN-BASEBALL-BLACK`
+
+**Response**
+```json
+{
+  "<id>": "string"
+}
+```
+
+#### `GET /api/manage-catalog/items/{id}`
+- Source: `Inventory_Update.har` · status 200
+- Query: `?relationship-type=BUNDLE&query=query getCatalogItemQuery {  getCatalogItemById(id:"{id}", dataEnrichmentAttributes: {listings:ALL relationships:ID_ONLY}) {responseType catalogItem{id catalogOwnerId customId status identifiers{type value} attributes{title description imageURLs isBestSeller measureme`
+
+**Response**
+```json
+{
+  "<id>": {
+    "id": "string",
+    "catalogOwnerId": "string",
+    "customId": "string",
+    "sizeGuide": "null",
+    "status": "enum:\"ACTIVE\"",
+    "identifiers": [],
+    "attributes": {
+      "<id>": "string"
+    },
+    "category": {
+      "id": "string",
+      "name": "string"
+    },
+    "categoryAttributes": "string",
+    "listings": [
+      {
+        "id": "string",
+        "marketplaceRegionChannel": "string",
+        "marketplaceRegionChannelCatalogItemId": "string",
+        "status": "enum:\"ACTIVE\"",
+        "companyId": "null"
+      }
+    ],
+    "relationships": [],
+    "relationshipItems": "null",
+    "creationTimestamp": "number",
+    "lastUpdateTimestamp": "number",
+    "specifications": "null"
+  }
+}
+```
+
+#### `GET /api/manage-catalog/jobs`
+- Source: `Inventory_Update.har` · status 200
+- Query: `?jobType=UPDATE_LOCATION_SKU_STATUS&startTimestamp=1776178392&endTimestamp=1783954392&pageSize=5`
+
+**Response**
+```json
+{
+  "items": [],
+  "pageCursor": "null"
+}
+```
+
+### Reports & Dashboards
+
+#### `GET /api/manage-catalog/reports/{id}`
+- Source: `returns.har` · status 200
+- Query: `?reportType=RETURNS_REPORT`
+
+**Response**
+```json
+{
+  "id": "string",
+  "type": "string",
+  "catalogOwnerId": "null",
+  "status": "enum:\"SUBMITTED\"",
+  "contentFileName": "null",
+  "completionResult": {
+    "<id>": "null"
+  },
+  "creationTimestamp": "number",
+  "additionalInfo": "string"
+}
+```
+
+#### `GET /api/quicksight/reports/dashboards/catalog-dashboard`
+- Source: `Insights.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `GET /api/quicksight/reports/dashboards/inventory-health-dashboard`
+- Source: `Insights.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `GET /api/quicksight/reports/dashboards/inventory-picture`
+- Source: `Inventory_Dashboard.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `GET /api/quicksight/reports/dashboards/return-insights-dashboard`
+- Source: `Insights.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `GET /api/quicksight/reports/dashboards/sales-dashboard`
+- Source: `Insights.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `GET /api/quicksight/reports/dashboards/shipping-dashboard`
+- Source: `Insights.har` · status 200
+
+**Response**
+_(not captured)_
+
+#### `POST /api/manage-catalog/reports`
+- Source: `returns.har` · status 200
+
+**Request body**
+```json
+{
+  "reportType": "string",
+  "reportParameters": {
+    "startDate": "number",
+    "endDate": "number"
+  }
+}
+```
+
+**Response**
+_(not captured)_
 
 ---
 
@@ -680,6 +826,73 @@ query GetPickTaskConfiguration { locationConfiguration { pickTaskConfiguration {
       "pickTaskConfiguration": {
         "<id>": "boolean"
       }
+    }
+  }
+}
+```
+
+### GetReturn (query)
+- Source: `returns_1.har`
+
+**Query**
+```graphql
+query GetReturn($input: GetReturnRequestInput!) { getReturn(input: $input) { returnDetails { id merchantId returnLocationId fulfillmentLocationId merchantSku numberOfUnits returnType effectiveStatus returnMetadata { returnReason fulfillmentOrderId rmaId invoiceInfo { invoiceId invoiceCreationTimestamp } } channelReturnAttributes { merchantId shipmentId customerOrderId returnLocationId exchangeOrderId channelSku marketplaceName marketplace channelName marketplaceRegion } creationTimestamp lastUpdatedTimestamp returnShippingInfo { deliveryTimestamp pickupTimestamp customerDroppedOffTimestamp sellerProcessedTimestamp forwardTrackingInfo { trackingId carrierName } reverseTrackingInfo { trackingId carrierName } } otpDetails { otp validTill } returnedWithOTP replanned previousTrackingInfo { trackingId carrierName } replacement exchange updatedBy postReturnStatus overallDisposition numberOfUnitsSellable numberOfUnitsUnsellable productImage productTitle } productDetails { productTitle productImage } } }
+```
+
+**Variables**
+```json
+{
+  "input": {
+    "id": "string"
+  }
+}
+```
+
+**Response (decoded)**
+```json
+{
+  "data": {
+    "getReturn": {
+      "returnDetails": {
+        "id": "string",
+        "merchantId": "string",
+        "returnLocationId": "string",
+        "fulfillmentLocationId": "string",
+        "merchantSku": "string",
+        "numberOfUnits": "number",
+        "returnType": "string",
+        "effectiveStatus": "string",
+        "returnMetadata": {
+          "<id>": "string"
+        },
+        "channelReturnAttributes": {
+          "<id>": "string"
+        },
+        "creationTimestamp": "number",
+        "lastUpdatedTimestamp": "number",
+        "returnShippingInfo": {
+          "<id>": "null"
+        },
+        "otpDetails": "null",
+        "returnedWithOTP": "boolean",
+        "replanned": "boolean",
+        "previousTrackingInfo": [
+          {
+            "trackingId": "string",
+            "carrierName": "string"
+          }
+        ],
+        "replacement": "boolean",
+        "exchange": "boolean",
+        "updatedBy": "string",
+        "postReturnStatus": "string",
+        "overallDisposition": "string",
+        "numberOfUnitsSellable": "number",
+        "numberOfUnitsUnsellable": "number",
+        "productImage": "string",
+        "productTitle": "string"
+      },
+      "productDetails": "null"
     }
   }
 }
@@ -755,6 +968,95 @@ query RetrieveBatchOrderDocuments($input: RetrieveBatchDocumentsInput!) { orderD
 }
 ```
 
+### SearchReturns (query)
+- Source: `returns.har`
+
+**Query**
+```graphql
+query SearchReturns($input: SearchReturnsRequestInput!) { searchReturns(input: $input) { returns { returnId merchantId returnTrackingId forwardTrackingId customerOrderId shipmentId merchantSku channelSku channel marketplace program carrier effectiveStatus returnType lastUpdatedTimestamp overallDisposition postReturnStatus numberOfUnits numberOfUnitsSellable numberOfUnitsUnsellable creationTimestamp productImage productTitle } nextPageToken } }
+```
+
+**Variables**
+```json
+{
+  "input": {
+    "filters": {
+      "effectiveStatus": [
+        "string"
+      ]
+    },
+    "pageSize": "number"
+  }
+}
+```
+
+**Response (decoded)**
+```json
+{
+  "data": {
+    "searchReturns": {
+      "returns": [
+        {
+          "returnId": "string",
+          "merchantId": "string",
+          "returnTrackingId": "string",
+          "forwardTrackingId": "string",
+          "customerOrderId": "string",
+          "shipmentId": "string",
+          "merchantSku": "string",
+          "channelSku": "string",
+          "channel": "string",
+          "marketplace": "enum:\"AMAZON_IN\"",
+          "program": "string",
+          "carrier": "string",
+          "effectiveStatus": "string",
+          "returnType": "string",
+          "lastUpdatedTimestamp": "number",
+          "overallDisposition": "null",
+          "postReturnStatus": "null",
+          "numberOfUnits": "number",
+          "numberOfUnitsSellable": "null",
+          "numberOfUnitsUnsellable": "null",
+          "creationTimestamp": "number",
+          "productImage": "string",
+          "productTitle": "string"
+        }
+      ],
+      "nextPageToken": "string"
+    }
+  }
+}
+```
+
+### UpdateReturnItem (mutation)
+- Source: `returns.har`
+
+**Query**
+```graphql
+mutation UpdateReturnItem($input: UpdateReturnItemRequestInput!) { updateReturnItem(input: $input) { success returnId } }
+```
+
+**Variables**
+```json
+{
+  "input": {
+    "<id>": "string"
+  }
+}
+```
+
+**Response (decoded)**
+```json
+{
+  "data": {
+    "updateReturnItem": {
+      "success": "boolean",
+      "returnId": "string"
+    }
+  }
+}
+```
+
 ### Weblab (query)
 - Source: `1amazon_easy_ship.har`
 
@@ -777,20 +1079,76 @@ query Weblab { weblab { weblab isEnabled } }
 }
 ```
 
+### getInventoryItemsDetail (query)
+- Source: `Inventory_Update.har`
+
+**Query**
+```graphql
+query getInventoryItemsDetail($input: GetInventoryRequestInput!) { inventory(input: $input) { versionToUpdateInventory quantity reservedQuantity itemId } }
+```
+
+**Variables**
+```json
+{
+  "input": {
+    "itemId": "string"
+  }
+}
+```
+
+**Response (decoded)**
+```json
+{
+  "data": {
+    "inventory": {
+      "versionToUpdateInventory": "number",
+      "quantity": "number",
+      "reservedQuantity": "number",
+      "itemId": "string"
+    }
+  }
+}
+```
+
+### updateInventoryQuantity (mutation)
+- Source: `Inventory_Update.har`
+
+**Query**
+```graphql
+mutation updateInventoryQuantity($input: UpdateInventoryRequestInput!) { updateInventory(input: $input) }
+```
+
+**Variables**
+```json
+{
+  "input": {
+    "versionToUpdateInventory": "number",
+    "itemId": "string",
+    "quantity": "number",
+    "type": "string"
+  }
+}
+```
+
+**Response (decoded)**
+```json
+{
+  "data": {
+    "updateInventory": "boolean"
+  }
+}
+```
+
 ---
 
-## Endpoints seen but not yet documented in depth
-
-As more HARs are captured (Returns, Cancellations, Inventory, Manifests, Reports,
-Settings, etc.), append them here. Known-but-thin so far:
-- `GET /api/pick/lists/missed`, `GET /api/pick/orders/missed/count` — missed-pickup orders
-- `GET /api/pack/sideline-reasons` — reasons to sideline an order
-- `GetPickTaskConfiguration`, `GetBulkPackConfig` — channel/pack config
+## Coverage notes
+- `quicksight/reports/dashboards/*` return embedded QuickSight dashboard URLs/config (sales, shipping, inventory-health, return-insights, catalog, inventory-picture).
+- `manage-catalog/reports` (POST create + GET by id) drive async report/export generation (used by Returns export).
+- Inventory writes: GraphQL `updateInventoryQuantity`; catalog reads: `getInventoryItemsDetail`, `GET /api/manage-catalog/items/{id}`, `GET /api/inbound/product-details`, `GET /api/manage-catalog/jobs`.
+- Returns: GraphQL `SearchReturns`, `GetReturn`, `UpdateReturnItem`.
 
 ## TODO (pages to capture next)
-- Returns / RTO
-- Cancellations list (needed for "Printed Cancelled")
-- Inventory / stock
+- Cancellations list (for "Printed Cancelled")
 - Manifest generation & handover
-- Reports / analytics
 - Settings / rules / auto-allocation
+- Any per-order detail / order-search endpoints
