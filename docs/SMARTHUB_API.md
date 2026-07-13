@@ -621,6 +621,19 @@ _(not captured)_
 
 ### Orders
 
+#### `GET /api/orders/details`
+- Source: `Cancelled_AMZ.har` · status 200
+- Query: `?exSD=1783967399&exclusiveStartRecordNumber=0&shipmentStatus=CANCELLED`
+
+**Response**
+```json
+[
+  {
+    "<id>": "string"
+  }
+]
+```
+
 #### `GET /api/orders/summary`
 - Source: `1amazon_easy_ship.har` · status 200
 - Query: `?date=2026-06-20&salesChannelFilters[0].salesChannel=MFN&salesChannelFilters[0].isSelfShip=false`
