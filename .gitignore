@@ -4,5 +4,6 @@ labels/
 data/
 *.log
 config/alerts.json
+config/peers.json
 LOGIN-REQUIRED.txt
 .claude/

@@ -17,7 +17,7 @@ import { rowsFromOrders, writeRowsToXlsx } from "./picklist.js";
 // Today's date in IST (Asia/Kolkata) as YYYY-MM-DD — used to group print output
 // by the day it was PRINTED (not by each order's ship date), so a day's morning
 // and afternoon prints always stay in the same folder.
-function printDayIST() {
+export function printDayIST() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Kolkata",
     year: "numeric",
@@ -26,7 +26,7 @@ function printDayIST() {
   }).format(new Date());
 }
 
-function openFile(file) {
+export function openFile(file) {
   // Windows: `start` opens with the default app (PDF viewer).
   if (process.platform === "win32") {
     exec(`start "" "${file}"`, { shell: "cmd.exe" });
@@ -99,8 +99,9 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
     // Pick manifest for exactly these orders, saved alongside the labels so the
     // employee picks the products, then packs using the labels.
     let pickFile = null;
+    const pickRows = rowsFromOrders(orders); // exposed on the result too, for cross-machine merging
     try {
-      const rows = rowsFromOrders(orders);
+      const rows = pickRows;
       if (rows.length) {
         pickFile = path.join(dayDir, `picklist-${day}-${batchId}.xlsx`);
         const { totalQty } = await writeRowsToXlsx(rows, pickFile);
@@ -126,7 +127,7 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
     store.audit(channelKey, "printed", `${ids.length} -> ${path.basename(file)}`);
 
     log.ok(`[${channelKey}] Printed batch: ${file} (${ids.length} orders, ${bytes.length} bytes)`);
-    results.push({ channel: channelKey, file, pickFile, count: ids.length });
+    results.push({ channel: channelKey, file, pickFile, pickRows, count: ids.length });
 
     if (open) {
       openFile(file);

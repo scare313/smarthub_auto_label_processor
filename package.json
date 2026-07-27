@@ -15,6 +15,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "nodemailer": "^9.0.1",
+    "pdf-lib": "^1.17.1",
     "playwright": "^1.49.0"
   }
 }

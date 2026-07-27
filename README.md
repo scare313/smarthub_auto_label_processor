@@ -113,6 +113,43 @@ AGENT_NO_SCHEDULE=1 npm run serve
 `SmartHub.bat` / `run-auto.bat` / Task Scheduler stay in place until the server has
 been verified on a machine; the CLI (`index.js`) remains for debugging either way.
 
+### Combined printing across two machines (e.g. Bludo PC + Shop PC)
+
+If only one machine has the physical printer (the "hub"), its **Print New Labels**
+button can pull labels from another machine (a "processor") over Tailscale, merge
+same-marketplace PDFs + pick manifests together, and print the combined result —
+no more manually sending files over WhatsApp.
+
+Each machine's own idempotency/print-tracking is untouched — the processor marks
+its own orders printed in its own local store exactly as if it had printed locally.
+
+**Setup — both machines:**
+1. Copy `config/peers.example.json` to `config/peers.json`.
+2. Set the **same** `sharedSecret` (a long random string) on both machines.
+
+**On the hub machine only** (the one with the printer, e.g. Shop PC), list the
+processor machine(s) to pull from:
+```json
+{
+  "sharedSecret": "same-long-random-string-on-both-machines",
+  "peers": [{ "name": "bludo", "url": "http://<Bludo-PC-Tailscale-IP>:4545" }]
+}
+```
+
+**On the processor machine(s)** (e.g. Bludo PC), leave `peers` empty — it only needs
+the matching `sharedSecret` so it can verify incoming requests:
+```json
+{ "sharedSecret": "same-long-random-string-on-both-machines", "peers": [] }
+```
+
+The control page detects its role automatically (`hub` if `peers` is non-empty,
+`processor` otherwise) and adjusts the page: the hub's hero button becomes **Print
+New Labels** (combined); a processor's hero becomes **Process Orders Now**, with
+local printing kept as a fallback under **Advanced** (in case the hub or network is
+ever unavailable). If a peer is unreachable when the hub prints, it prints its own
+labels anyway and shows a warning naming the unreachable peer — it never blocks on
+one machine being down.
+
 ## Email alerts (login expiry + failures)
 
 If the Amazon session expires, the processor emails you (once when it goes down, once

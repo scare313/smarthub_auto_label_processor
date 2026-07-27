@@ -13,16 +13,21 @@
 
 import express from "express";
 import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { queue } from "./src/queue.js";
 import { getClient, getSessionState, doLogin, closeClient } from "./src/agent.js";
 import { runCycle, startScheduler } from "./src/scheduler.js";
-import { printNewLabels, reprintLast } from "./src/print.js";
+import { printNewLabels, reprintLast, printDayIST, openFile } from "./src/print.js";
 import { marketStatus } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
-import { todayIST } from "./src/config.js";
+import { todayIST, LABELS_DIR } from "./src/config.js";
+import { listPeers, sharedSecret, isHub } from "./src/peers.js";
+import { mergePdfBuffers, mergePickRows } from "./src/merge.js";
+import { writeRowsToXlsx } from "./src/picklist.js";
+import { store } from "./src/store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4545;
@@ -38,6 +43,7 @@ app.get("/api/status", (req, res) => {
   res.json({
     host: os.hostname(),
     date: todayIST(),
+    role: isHub() ? "hub" : "processor",
     sessionAlive: getSessionState(),
     lastSummary,
     queue: { busy: queue.busy, current: queue.current, pending: queue.pendingNames },
@@ -103,6 +109,147 @@ app.post("/api/summary", async (req, res) => {
     });
     lastSummary = rows;
     res.json({ message: "Status updated.", rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- Cross-machine combined printing (hub machine only has peers configured;
+// any machine can SERVE a peer request if it has the shared secret set) ------
+
+// Verifies X-Agent-Token against config/peers.json's sharedSecret. Refuses if
+// no secret is configured (safe default — must be set up deliberately).
+function peerAuth(req, res, next) {
+  const secret = sharedSecret();
+  if (!secret) return res.status(503).json({ error: "Peer auth not configured (config/peers.json missing sharedSecret)." });
+  if (req.header("x-agent-token") !== secret) return res.status(401).json({ error: "Invalid or missing agent token." });
+  next();
+}
+
+// Called BY another agent (the hub) to run this machine's own print-new-labels
+// and hand back the PDF bytes + pick-manifest rows for merging. This machine's
+// own idempotency/print-state bookkeeping happens exactly as normal.
+app.post("/api/peer/print", peerAuth, async (req, res) => {
+  try {
+    const results = await queue.run("peer-print", async () => {
+      const client = await getClient();
+      return printNewLabels(client, { open: false });
+    });
+    const payload = results.map((r) => ({
+      channel: r.channel,
+      count: r.count,
+      pdfBase64: fs.readFileSync(r.file).toString("base64"),
+      pickRows: r.pickRows || [],
+    }));
+    res.json({ results: payload });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+async function fetchPeer(peer) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180000); // peer may be mid-cycle; allow up to 3 min
+  try {
+    const r = await fetch(`${peer.url}/api/peer/print`, {
+      method: "POST",
+      headers: { "X-Agent-Token": sharedSecret() },
+      signal: controller.signal,
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${r.status}`);
+    }
+    const j = await r.json();
+    return { peer: peer.name, ok: true, results: j.results || [] };
+  } catch (e) {
+    return { peer: peer.name, ok: false, error: e.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The HUB machine's real "Print New Labels" action: prints locally AND pulls
+// from every configured peer, then merges same-channel PDFs + pick-manifests
+// into one combined set. Gracefully degrades to local-only if a peer is
+// unreachable (never fails the whole action for that).
+app.post("/api/print-combined", async (req, res) => {
+  try {
+    const peers = listPeers();
+    const [localSettled, peerSettled] = await Promise.allSettled([
+      queue.run("print", async () => {
+        const client = await getClient();
+        return printNewLabels(client, { open: false });
+      }),
+      Promise.all(peers.map(fetchPeer)),
+    ]);
+
+    const bySource = new Map(); // channel -> { pdfBuffers, pickRowArrays, counts, sourceNames }
+    function addSource(channel, pdfBuf, pickRows, count, sourceName) {
+      if (!bySource.has(channel)) bySource.set(channel, { pdfBuffers: [], pickRowArrays: [], counts: [], sourceNames: [] });
+      const b = bySource.get(channel);
+      b.pdfBuffers.push(pdfBuf);
+      b.pickRowArrays.push(pickRows);
+      b.counts.push(count);
+      b.sourceNames.push(sourceName);
+    }
+
+    const warnings = [];
+    if (localSettled.status === "fulfilled") {
+      for (const r of localSettled.value) addSource(r.channel, fs.readFileSync(r.file), r.pickRows || [], r.count, "local");
+    } else {
+      warnings.push(`Local print failed: ${localSettled.reason.message}`);
+    }
+
+    if (peerSettled.status === "fulfilled") {
+      for (const p of peerSettled.value) {
+        if (!p.ok) {
+          warnings.push(`${p.peer} unreachable (${p.error}) — its labels are NOT included.`);
+          continue;
+        }
+        for (const r of p.results) addSource(r.channel, Buffer.from(r.pdfBase64, "base64"), r.pickRows || [], r.count, p.peer);
+      }
+    } else {
+      warnings.push(`Peer fetch failed: ${peerSettled.reason.message}`);
+    }
+
+    if (!bySource.size) {
+      res.json({ message: warnings.length ? `No labels. ${warnings.join(" ")}` : "No new labels to print.", warnings });
+      return;
+    }
+
+    const day = printDayIST();
+    const dayDir = path.join(LABELS_DIR, day);
+    fs.mkdirSync(dayDir, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(11, 19);
+
+    const combinedFiles = [];
+    const summaryLines = [];
+    for (const [channel, b] of bySource) {
+      const totalCount = b.counts.reduce((s, c) => s + c, 0);
+      const mergedPdf = await mergePdfBuffers(b.pdfBuffers);
+      const file = path.join(dayDir, `combined-${day}-${channel}-${stamp}-${totalCount}orders.pdf`);
+      fs.writeFileSync(file, mergedPdf);
+      combinedFiles.push(file);
+
+      const mergedRows = mergePickRows(b.pickRowArrays);
+      let pickFile = null;
+      if (mergedRows.length) {
+        pickFile = path.join(dayDir, `combined-picklist-${day}-${channel}-${stamp}.xlsx`);
+        await writeRowsToXlsx(mergedRows, pickFile);
+        combinedFiles.push(pickFile);
+      }
+
+      summaryLines.push(`${channel}: ${totalCount} (${b.sourceNames.join("+")})`);
+      openFile(file);
+      if (pickFile) openFile(pickFile);
+    }
+
+    store.setLastPrint(combinedFiles);
+    log.ok(`Combined print: ${summaryLines.join(", ")}`);
+
+    const message = `Printed combined: ${summaryLines.join(", ")}.` + (warnings.length ? ` ${warnings.join(" ")}` : "");
+    res.json({ message, warnings });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

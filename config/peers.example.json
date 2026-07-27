@@ -1,0 +1,6 @@
+{
+  "sharedSecret": "choose-a-long-random-string-same-on-both-machines",
+  "peers": [
+    { "name": "bludo", "url": "http://100.x.x.x:4545" }
+  ]
+}

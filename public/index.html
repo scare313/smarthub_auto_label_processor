@@ -58,12 +58,12 @@
   <div class="statusbar" id="status">Loading status…</div>
   <div class="banner" id="banner"></div>
 
-  <button class="hero" id="btn-print">
-    Print New Labels
-    <span class="hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
+  <button class="hero" id="btn-hero">
+    <span id="hero-label">Print New Labels</span>
+    <span class="hint" id="hero-hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
   </button>
 
-  <div class="row">
+  <div class="row hub-only" id="row-print-secondary">
     <button class="secondary" id="btn-print-all">Print All Today's Labels</button>
     <button class="secondary" id="btn-reprint">Reprint Last Labels</button>
   </div>
@@ -77,10 +77,18 @@
   </div>
 
   <details class="advanced">
-    <summary>Advanced (processing runs automatically every 15 min — manual controls below)</summary>
-    <div class="row">
+    <summary id="advanced-summary">Advanced (processing runs automatically every 15 min — manual controls below)</summary>
+    <div class="row hub-only" id="row-advanced-hub">
       <button class="secondary" id="btn-run">Process Orders Now</button>
       <button class="secondary" id="btn-login">Login</button>
+    </div>
+    <div class="row processor-only" id="row-advanced-processor" style="display:none;">
+      <button class="secondary" id="btn-print-local">Print Locally (fallback)</button>
+      <button class="secondary" id="btn-print-all-local">Print All (local)</button>
+    </div>
+    <div class="row processor-only" id="row-advanced-processor2" style="display:none;">
+      <button class="secondary" id="btn-reprint-local">Reprint Last (local)</button>
+      <button class="secondary" id="btn-login-2">Login</button>
     </div>
     <h2>Activity log</h2>
     <div id="log"></div>
@@ -128,15 +136,49 @@ async function post(path, { silent } = {}) {
   refreshStatus();
 }
 
-$("btn-print").onclick = () => post("/api/print");
+function loginHandler() {
+  setBanner("Opening a visible login window on the server machine — complete OTP there.", "info");
+  post("/api/login", { silent: true });
+}
+
 $("btn-print-all").onclick = () => post("/api/print-all");
 $("btn-reprint").onclick = () => post("/api/reprint");
 $("btn-run").onclick = () => post("/api/run");
-$("btn-login").onclick = () => {
-  setBanner("Opening a visible login window on the server machine — complete OTP there.", "info");
-  post("/api/login", { silent: true });
-};
+$("btn-login").onclick = loginHandler;
+$("btn-login-2").onclick = loginHandler;
+$("btn-print-local").onclick = () => post("/api/print");
+$("btn-print-all-local").onclick = () => post("/api/print-all");
+$("btn-reprint-local").onclick = () => post("/api/reprint");
 $("btn-summary").onclick = () => post("/api/summary");
+
+// Role decides the hero action + which secondary controls show:
+// - "hub" (has peers configured, e.g. Shop PC with the printer): hero = Print
+//   New Labels, pulling + merging from every configured peer machine too.
+// - "processor" (e.g. Bludo PC, no printer): hero = Process Orders Now; local
+//   printing stays available as a fallback, tucked into Advanced.
+let roleApplied = null;
+function applyRole(role) {
+  if (role === roleApplied) return;
+  roleApplied = role;
+  const hero = $("btn-hero");
+  if (role === "hub") {
+    $("hero-label").textContent = "Print New Labels";
+    $("hero-hint").textContent = "Combines every new label from this machine and any connected machines into one PDF per marketplace (+ pick list)";
+    hero.onclick = () => post("/api/print-combined");
+    $("row-print-secondary").style.display = "";
+    $("row-advanced-hub").style.display = "";
+    $("row-advanced-processor").style.display = "none";
+    $("row-advanced-processor2").style.display = "none";
+  } else {
+    $("hero-label").textContent = "Process Orders Now";
+    $("hero-hint").textContent = "Also runs automatically every 15 min — click to run immediately";
+    hero.onclick = () => post("/api/run");
+    $("row-print-secondary").style.display = "none";
+    $("row-advanced-hub").style.display = "none";
+    $("row-advanced-processor").style.display = "";
+    $("row-advanced-processor2").style.display = "";
+  }
+}
 
 async function refreshStatus() {
   try {
@@ -150,6 +192,7 @@ async function refreshStatus() {
       (j.lastCycleAt ? `<span>Last auto-cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last auto-cycle: none yet</span>");
     $("hostinfo").textContent = `${j.host} · date ${j.date} · auto-processing every 15 min`;
     if (j.lastSummary) renderDash(j.lastSummary);
+    applyRole(j.role);
   } catch (e) {
     $("status").textContent = "Could not reach server.";
   }
