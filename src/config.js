@@ -58,6 +58,17 @@ export const CHANNELS = {
   },
 };
 
+// Today's date in IST (Asia/Kolkata), formatted YYYY-MM-DD.
+export function todayIST() {
+  const f = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return f.format(new Date());
+}
+
 export function resolveChannel(name) {
   const c = CHANNELS[String(name || "").toLowerCase()];
   if (!c) {

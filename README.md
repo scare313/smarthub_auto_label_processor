@@ -87,6 +87,32 @@ node index.js status                 # local processing + print/audit summary
 node index.js run                    # all channels, today (IST), dry-run
 ```
 
+## Web control server (replaces the .bat menu + Task Scheduler)
+
+`server.js` runs the same actions as `SmartHub.bat`, but as buttons on a web page,
+and runs the 15-min processing cycle **internally** instead of via Windows Task
+Scheduler. A single job queue ensures the scheduled cycle and any manual button
+click never run at the same time.
+
+```
+npm run serve
+```
+
+Then open `http://<this-machine's-IP-or-Tailscale-IP>:4545/` in a browser. Buttons:
+Process Orders Now · Print New Labels · Print All Today's Labels · Reprint Last
+Labels · Show Status · Login (opens a visible window on this machine for OTP).
+A live log tail and session/queue status are shown on the page.
+
+Set `AGENT_NO_SCHEDULE=1` to start the server **without** the internal cycle —
+useful to verify the page/session/login first before trusting it to process live
+orders unattended:
+```
+AGENT_NO_SCHEDULE=1 npm run serve
+```
+
+`SmartHub.bat` / `run-auto.bat` / Task Scheduler stay in place until the server has
+been verified on a machine; the CLI (`index.js`) remains for debugging either way.
+
 ## Email alerts (login expiry + failures)
 
 If the Amazon session expires, the processor emails you (once when it goes down, once

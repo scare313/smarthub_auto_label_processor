@@ -19,7 +19,7 @@
 //   node index.js run --channel flipkart --date 2026-06-20         (dry-run)
 //   node index.js run --channel flipkart --date 2026-06-20 --live  (real)
 
-import { BASE_URL, CHANNELS, resolveChannel } from "./src/config.js";
+import { BASE_URL, CHANNELS, resolveChannel, todayIST } from "./src/config.js";
 import { SmartHubClient, SessionExpiredError } from "./src/api.js";
 import { processChannel } from "./src/pipeline.js";
 import { dumpPicklist } from "./src/picklist.js";
@@ -49,17 +49,6 @@ function parseArgs(argv) {
     }
   }
   return args;
-}
-
-// Today's date in IST (Asia/Kolkata), formatted YYYY-MM-DD.
-function todayIST() {
-  const f = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return f.format(new Date());
 }
 
 async function cmdLogin() {

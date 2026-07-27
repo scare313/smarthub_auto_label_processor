@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SmartHub Control</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 1.25rem; }
+  h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
+  .sub { color: #888; font-size: 0.85rem; margin-bottom: 1.25rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+  button { font-size: 1rem; padding: 0.9rem; border-radius: 10px; border: 1px solid #8883; cursor: pointer; background: #6663; }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  #status { padding: 0.75rem 1rem; border-radius: 10px; background: #6663; margin-bottom: 1rem; font-size: 0.9rem; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .ok { background: #2ecc71; } .bad { background: #e74c3c; } .unk { background: #999; }
+  #log { background: #1118; color: #ddd; font-family: ui-monospace, monospace; font-size: 0.78rem;
+         padding: 0.75rem; border-radius: 10px; height: 260px; overflow-y: auto; white-space: pre-wrap; }
+  .msg { margin: 0.5rem 0; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+  <h1>SmartHub Control</h1>
+  <div class="sub" id="hostinfo">loading…</div>
+
+  <div id="status">Loading status…</div>
+  <div class="msg" id="msg"></div>
+
+  <div class="grid">
+    <button id="btn-run">Process Orders Now</button>
+    <button id="btn-print">Print New Labels</button>
+    <button id="btn-print-all">Print All Today's Labels</button>
+    <button id="btn-reprint">Reprint Last Labels</button>
+    <button id="btn-summary">Show Status</button>
+    <button id="btn-login">Login</button>
+  </div>
+
+  <div id="log"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function setMsg(text, isError) {
+  $("msg").textContent = text || "";
+  $("msg").style.color = isError ? "#e74c3c" : "#2ecc71";
+}
+
+async function post(path) {
+  setMsg("Working...");
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    setMsg(j.message || "Done.");
+  } catch (e) {
+    setMsg("Error: " + e.message, true);
+  }
+  refreshStatus();
+}
+
+$("btn-run").onclick = () => post("/api/run");
+$("btn-print").onclick = () => post("/api/print");
+$("btn-print-all").onclick = () => post("/api/print-all");
+$("btn-reprint").onclick = () => post("/api/reprint");
+$("btn-summary").onclick = () => post("/api/summary");
+$("btn-login").onclick = () => {
+  setMsg("Opening a visible login window on the server machine — complete OTP there, this page will update once done.");
+  post("/api/login");
+};
+
+async function refreshStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const j = await r.json();
+    const dot = j.sessionAlive === true ? "ok" : j.sessionAlive === false ? "bad" : "unk";
+    const queueText = j.queue.busy ? `running: ${j.queue.current.name}` : "idle";
+    $("status").innerHTML =
+      `<span class="dot ${dot}"></span>Session: ${j.sessionAlive === null ? "unknown" : j.sessionAlive ? "alive" : "expired"}` +
+      ` &nbsp;·&nbsp; Queue: ${queueText}` +
+      (j.lastCycleAt ? ` &nbsp;·&nbsp; Last cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}` : "");
+    $("hostinfo").textContent = `${j.host} · date ${j.date}`;
+  } catch (e) {
+    $("status").textContent = "Could not reach server.";
+  }
+}
+
+async function refreshLog() {
+  try {
+    const r = await fetch("/api/log");
+    const lines = await r.json();
+    const el = $("log");
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
+    el.textContent = lines.join("\n");
+    if (atBottom) el.scrollTop = el.scrollHeight;
+  } catch {}
+}
+
+refreshStatus();
+refreshLog();
+setInterval(refreshStatus, 4000);
+setInterval(refreshLog, 3000);
+</script>
+</body>
+</html>
