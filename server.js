@@ -32,12 +32,14 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
 let lastCycleAt = null;
+let lastSummary = null; // cached rows from the last /api/summary call
 
 app.get("/api/status", (req, res) => {
   res.json({
     host: os.hostname(),
     date: todayIST(),
     sessionAlive: getSessionState(),
+    lastSummary,
     queue: { busy: queue.busy, current: queue.current, pending: queue.pendingNames },
     lastCycleAt,
   });
@@ -65,7 +67,7 @@ app.post("/api/print", async (req, res) => {
       return printNewLabels(client, { open: false });
     });
     const count = results.reduce((s, r) => s + r.count, 0);
-    res.json({ message: results.length ? `Printed ${count} label(s).` : "No new labels to print." });
+    res.json({ message: results.length ? `Printed ${count} label(s).` : "No new labels to print.", results });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -78,7 +80,7 @@ app.post("/api/print-all", async (req, res) => {
       return printNewLabels(client, { open: false, all: true });
     });
     const count = results.reduce((s, r) => s + r.count, 0);
-    res.json({ message: results.length ? `Printed ALL: ${count} label(s).` : "No labels found for today." });
+    res.json({ message: results.length ? `Printed ALL: ${count} label(s).` : "No labels found for today.", results });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -99,11 +101,8 @@ app.post("/api/summary", async (req, res) => {
       const client = await getClient();
       return marketStatus(client, { date: todayIST() });
     });
-    const t = rows.reduce(
-      (a, r) => ({ total: a.total + r.total, processed: a.processed + r.processed, waiting: a.waiting + r.waiting }),
-      { total: 0, processed: 0, waiting: 0 }
-    );
-    res.json({ message: `Total ${t.total}, processed ${t.processed}, waiting ${t.waiting}. Full table in the log below.` });
+    lastSummary = rows;
+    res.json({ message: "Status updated.", rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -6,81 +6,137 @@
 <title>SmartHub Control</title>
 <style>
   :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
   body { font-family: system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 1.25rem; }
-  h1 { font-size: 1.3rem; margin-bottom: 0.25rem; }
-  .sub { color: #888; font-size: 0.85rem; margin-bottom: 1.25rem; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
-  button { font-size: 1rem; padding: 0.9rem; border-radius: 10px; border: 1px solid #8883; cursor: pointer; background: #6663; }
-  button:active { transform: scale(0.98); }
-  button:disabled { opacity: 0.5; cursor: not-allowed; }
-  #status { padding: 0.75rem 1rem; border-radius: 10px; background: #6663; margin-bottom: 1rem; font-size: 0.9rem; }
+  h1 { font-size: 1.3rem; margin: 0 0 0.15rem; }
+  h2 { font-size: 0.95rem; margin: 0 0 0.6rem; color: #aaa; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .sub { color: #888; font-size: 0.85rem; margin-bottom: 1rem; }
+
+  .statusbar { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; align-items: center;
+               padding: 0.6rem 1rem; border-radius: 10px; background: #6663; margin-bottom: 1.25rem; font-size: 0.85rem; }
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
   .ok { background: #2ecc71; } .bad { background: #e74c3c; } .unk { background: #999; }
-  #log { background: #1118; color: #ddd; font-family: ui-monospace, monospace; font-size: 0.78rem;
-         padding: 0.75rem; border-radius: 10px; height: 260px; overflow-y: auto; white-space: pre-wrap; }
-  .msg { margin: 0.5rem 0; font-size: 0.85rem; }
+
+  .hero { width: 100%; font-size: 1.15rem; font-weight: 700; padding: 1.4rem; border-radius: 14px;
+          border: none; cursor: pointer; background: #2ecc71; color: #04342c; margin-bottom: 0.75rem; }
+  .hero:active { transform: scale(0.99); }
+  .hero:disabled { opacity: 0.6; cursor: not-allowed; }
+  .hero .hint { display: block; font-size: 0.78rem; font-weight: 400; margin-top: 0.2rem; color: #04342c; opacity: 0.75; }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 1.5rem; }
+  button.secondary { font-size: 0.92rem; padding: 0.8rem; border-radius: 10px; border: 1px solid #8883; cursor: pointer; background: #6663; }
+  button.secondary:active { transform: scale(0.98); }
+  button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .banner { padding: 0.7rem 1rem; border-radius: 10px; font-size: 0.88rem; margin-bottom: 1rem; display: none; }
+  .banner.show { display: block; }
+  .banner.success { background: #2ecc7122; color: #2ecc71; border: 1px solid #2ecc7155; }
+  .banner.error { background: #e74c3c22; color: #e74c3c; border: 1px solid #e74c3c55; }
+  .banner.info { background: #6663; color: inherit; }
+
+  table.dash { width: 100%; border-collapse: collapse; font-size: 0.88rem; margin-bottom: 0.4rem; }
+  table.dash th, table.dash td { text-align: right; padding: 0.4rem 0.5rem; }
+  table.dash th:first-child, table.dash td:first-child { text-align: left; }
+  table.dash thead th { color: #999; font-weight: 600; border-bottom: 1px solid #8884; }
+  table.dash tbody tr:last-child { font-weight: 700; border-top: 1px solid #8884; }
+  table.dash td.warn { color: #f1c40f; }
+  .dash-note { font-size: 0.75rem; color: #888; margin: 0 0 1.5rem; }
+  .dash-empty { font-size: 0.85rem; color: #888; padding: 0.5rem 0 1.5rem; }
+
+  details.advanced { margin-top: 0.5rem; }
+  details.advanced summary { cursor: pointer; font-size: 0.85rem; color: #999; padding: 0.4rem 0; user-select: none; }
+  details.advanced .row { margin-top: 0.75rem; margin-bottom: 0.75rem; }
+
+  #log { background: #1118; color: #ddd; font-family: ui-monospace, monospace; font-size: 0.76rem;
+         padding: 0.75rem; border-radius: 10px; height: 220px; overflow-y: auto; white-space: pre-wrap; margin-top: 0.5rem; }
 </style>
 </head>
 <body>
   <h1>SmartHub Control</h1>
   <div class="sub" id="hostinfo">loading…</div>
 
-  <div id="status">Loading status…</div>
-  <div class="msg" id="msg"></div>
+  <div class="statusbar" id="status">Loading status…</div>
+  <div class="banner" id="banner"></div>
 
-  <div class="grid">
-    <button id="btn-run">Process Orders Now</button>
-    <button id="btn-print">Print New Labels</button>
-    <button id="btn-print-all">Print All Today's Labels</button>
-    <button id="btn-reprint">Reprint Last Labels</button>
-    <button id="btn-summary">Show Status</button>
-    <button id="btn-login">Login</button>
+  <button class="hero" id="btn-print">
+    Print New Labels
+    <span class="hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
+  </button>
+
+  <div class="row">
+    <button class="secondary" id="btn-print-all">Print All Today's Labels</button>
+    <button class="secondary" id="btn-reprint">Reprint Last Labels</button>
   </div>
 
-  <div id="log"></div>
+  <div style="display:flex; align-items:center; justify-content:space-between;">
+    <h2 style="margin-bottom:0;">Today's status</h2>
+    <button class="secondary" id="btn-summary" style="padding:0.3rem 0.7rem; font-size:0.8rem; margin-bottom:0.6rem;">Refresh</button>
+  </div>
+  <div id="dash-wrap">
+    <div class="dash-empty">Loading…</div>
+  </div>
+
+  <details class="advanced">
+    <summary>Advanced (processing runs automatically every 15 min — manual controls below)</summary>
+    <div class="row">
+      <button class="secondary" id="btn-run">Process Orders Now</button>
+      <button class="secondary" id="btn-login">Login</button>
+    </div>
+    <h2>Activity log</h2>
+    <div id="log"></div>
+  </details>
 
 <script>
 const $ = (id) => document.getElementById(id);
+let bannerTimer = null;
 
-function setMsg(text, isError) {
-  $("msg").textContent = text || "";
-  $("msg").style.color = isError ? "#e74c3c" : "#2ecc71";
+function setBanner(text, kind) {
+  const el = $("banner");
+  el.textContent = text;
+  el.className = "banner show " + kind;
+  clearTimeout(bannerTimer);
+  if (kind !== "info") bannerTimer = setTimeout(() => el.classList.remove("show"), 8000);
 }
 
-// The log tail shows ALL recent activity on first load, but is "cleared" (only
-// showing lines from this point on) each time a command is run, so each click
-// gives a fresh, readable view instead of an ever-growing wall of text.
-let lastLogLines = [];
-let logBaseline = 0;
-
-function clearLogView() {
-  logBaseline = lastLogLines.length;
-  $("log").textContent = "";
+function renderDash(rows) {
+  const wrap = $("dash-wrap");
+  if (!rows || !rows.length) { wrap.innerHTML = '<div class="dash-empty">No data yet — click Show Status below or wait for the next cycle.</div>'; return; }
+  const t = rows.reduce((a, r) => ({ total: a.total + r.total, processed: a.processed + r.processed, waiting: a.waiting + r.waiting, printed: a.printed + r.printed, cancelled: a.cancelled + r.cancelled }),
+    { total: 0, processed: 0, waiting: 0, printed: 0, cancelled: 0 });
+  const rowHtml = (r) => `<tr><td>${r.key}</td><td>${r.total}</td><td>${r.processed}</td>` +
+    `<td${r.waiting > 0 ? ' class="warn"' : ""}>${r.waiting}</td><td>${r.printed}</td><td>${r.cancelled}</td></tr>`;
+  wrap.innerHTML =
+    '<table class="dash"><thead><tr><th>Channel</th><th>Total</th><th>Processed</th><th>Waiting</th><th>Printed</th><th>Cancelled</th></tr></thead><tbody>' +
+    rows.map(rowHtml).join("") + rowHtml({ ...t, key: "TOTAL" }) +
+    '</tbody></table><div class="dash-note">Processed = packed/shipped in SmartHub &middot; Waiting = not yet packed &middot; Printed = labels printed locally</div>';
 }
 
-async function post(path) {
+async function post(path, { silent } = {}) {
   clearLogView();
-  setMsg("Working...");
+  if (!silent) setBanner("Working…", "info");
+  document.querySelectorAll("button").forEach((b) => (b.disabled = true));
   try {
     const r = await fetch(path, { method: "POST" });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || r.statusText);
-    setMsg(j.message || "Done.");
+    if (!silent) setBanner(j.message || "Done.", "success");
+    if (j.rows) renderDash(j.rows);
   } catch (e) {
-    setMsg("Error: " + e.message, true);
+    setBanner("Error: " + e.message, "error");
   }
+  document.querySelectorAll("button").forEach((b) => (b.disabled = false));
   refreshStatus();
 }
 
-$("btn-run").onclick = () => post("/api/run");
 $("btn-print").onclick = () => post("/api/print");
 $("btn-print-all").onclick = () => post("/api/print-all");
 $("btn-reprint").onclick = () => post("/api/reprint");
-$("btn-summary").onclick = () => post("/api/summary");
+$("btn-run").onclick = () => post("/api/run");
 $("btn-login").onclick = () => {
-  setMsg("Opening a visible login window on the server machine — complete OTP there, this page will update once done.");
-  post("/api/login");
+  setBanner("Opening a visible login window on the server machine — complete OTP there.", "info");
+  post("/api/login", { silent: true });
 };
+$("btn-summary").onclick = () => post("/api/summary");
 
 async function refreshStatus() {
   try {
@@ -90,14 +146,21 @@ async function refreshStatus() {
     const queueText = j.queue.busy ? `running: ${j.queue.current.name}` : "idle";
     $("status").innerHTML =
       `<span class="dot ${dot}"></span>Session: ${j.sessionAlive === null ? "unknown" : j.sessionAlive ? "alive" : "expired"}` +
-      ` &nbsp;·&nbsp; Queue: ${queueText}` +
-      (j.lastCycleAt ? ` &nbsp;·&nbsp; Last cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}` : "");
-    $("hostinfo").textContent = `${j.host} · date ${j.date}`;
+      `<span>Queue: ${queueText}</span>` +
+      (j.lastCycleAt ? `<span>Last auto-cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last auto-cycle: none yet</span>");
+    $("hostinfo").textContent = `${j.host} · date ${j.date} · auto-processing every 15 min`;
+    if (j.lastSummary) renderDash(j.lastSummary);
   } catch (e) {
     $("status").textContent = "Could not reach server.";
   }
 }
 
+let lastLogLines = [];
+let logBaseline = 0;
+function clearLogView() {
+  logBaseline = lastLogLines.length;
+  $("log").textContent = "";
+}
 async function refreshLog() {
   try {
     const r = await fetch("/api/log");
@@ -113,7 +176,7 @@ async function refreshLog() {
 
 refreshStatus();
 refreshLog();
-setInterval(refreshStatus, 4000);
+setInterval(refreshStatus, 5000);
 setInterval(refreshLog, 3000);
 </script>
 </body>
