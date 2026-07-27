@@ -22,6 +22,14 @@ export function getRecentLogs(limit = 200) {
   return buffer.slice(-limit);
 }
 
+// Print a line with NO level/timestamp prefix (e.g. a table row) but still
+// capture it into the ring buffer so the web control page's log tail sees it.
+export function logRaw(text) {
+  buffer.push(text);
+  if (buffer.length > BUFFER_MAX) buffer.splice(0, buffer.length - BUFFER_MAX);
+  console.log(text);
+}
+
 function emit(level, color, args) {
   const text = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   const plainLine = `${stamp()} ${level.toUpperCase().padEnd(4)} ${text}`;
@@ -38,4 +46,5 @@ export const log = {
   warn: (...a) => emit("warn", COLORS.warn, a),
   err: (...a) => emit("err", COLORS.err, a),
   step: (...a) => emit("»", COLORS.info, a),
+  raw: (text) => logRaw(text),
 };

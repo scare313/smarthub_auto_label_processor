@@ -47,7 +47,19 @@ function setMsg(text, isError) {
   $("msg").style.color = isError ? "#e74c3c" : "#2ecc71";
 }
 
+// The log tail shows ALL recent activity on first load, but is "cleared" (only
+// showing lines from this point on) each time a command is run, so each click
+// gives a fresh, readable view instead of an ever-growing wall of text.
+let lastLogLines = [];
+let logBaseline = 0;
+
+function clearLogView() {
+  logBaseline = lastLogLines.length;
+  $("log").textContent = "";
+}
+
 async function post(path) {
+  clearLogView();
   setMsg("Working...");
   try {
     const r = await fetch(path, { method: "POST" });
@@ -90,9 +102,11 @@ async function refreshLog() {
   try {
     const r = await fetch("/api/log");
     const lines = await r.json();
+    lastLogLines = lines;
+    const visible = lines.slice(logBaseline);
     const el = $("log");
     const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 20;
-    el.textContent = lines.join("\n");
+    el.textContent = visible.join("\n");
     if (atBottom) el.scrollTop = el.scrollHeight;
   } catch {}
 }
