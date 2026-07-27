@@ -17,7 +17,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { queue } from "./src/queue.js";
-import { getClient, getSessionState, doLogin } from "./src/agent.js";
+import { getClient, getSessionState, doLogin, closeClient } from "./src/agent.js";
 import { runCycle, startScheduler } from "./src/scheduler.js";
 import { printNewLabels, reprintLast } from "./src/print.js";
 import { marketStatus } from "./src/status.js";
@@ -133,4 +133,24 @@ app.listen(PORT, () => {
       return r;
     })
   );
+});
+
+// Close the persistent browser cleanly on shutdown (Ctrl+C / service stop /
+// Windows logoff) so it never orphans a Chromium process that locks the
+// profile and blocks the next launch.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  log.warn(`Received ${signal} — closing browser session and exiting...`);
+  await closeClient().catch(() => {});
+  process.exit(0);
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+// Also on unexpected crashes, best-effort cleanup before the process dies.
+process.on("uncaughtException", async (e) => {
+  log.err(`Uncaught exception: ${e.stack || e.message}`);
+  await closeClient().catch(() => {});
+  process.exit(1);
 });
