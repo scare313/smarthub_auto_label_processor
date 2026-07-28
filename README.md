@@ -4,8 +4,9 @@ Automates the repetitive pick → pack → invoice → ship-label → download w
 **smarthub.amazon.in** by calling the same internal API the web app uses, from inside
 a logged-in Playwright browser session.
 
-> **Phase 1 goal:** prove the full pipeline end-to-end on real orders, safely.
-> Scheduling, continuous polling, and auto-print come in Phase 2.
+> **Setting up on a new/formatted PC?** Follow
+> **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — a complete step-by-step guide
+> from a blank Windows install (no prior knowledge assumed).
 
 ## How it works
 

@@ -1,0 +1,12 @@
+{
+  "email": {
+    "enabled": true,
+    "smtpHost": "smtp.gmail.com",
+    "smtpPort": 465,
+    "secure": true,
+    "user": "youraddress@gmail.com",
+    "pass": "your-16-character-gmail-app-password",
+    "from": "SmartHub Auto-Processor <youraddress@gmail.com>",
+    "to": "youraddress@gmail.com"
+  }
+}
