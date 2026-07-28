@@ -178,7 +178,10 @@ function loginHandler() {
   post("/api/login", { silent: true });
 }
 
-$("btn-print-all").onclick = () => post("/api/print-all");
+// Hub's "Print All Today's Labels" goes through the COMBINED route so it covers
+// every machine, not just this one (the local-only version lives under Advanced
+// on processor machines).
+$("btn-print-all").onclick = () => post("/api/print-combined", { body: { all: true, source: $("sel-source").value } });
 $("btn-reprint").onclick = () => post("/api/reprint");
 $("btn-run").onclick = () => post("/api/run");
 $("btn-login").onclick = loginHandler;

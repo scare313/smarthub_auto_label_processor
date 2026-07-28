@@ -177,9 +177,12 @@ function peerAuth(req, res, next) {
 // own idempotency/print-state bookkeeping happens exactly as normal.
 app.post("/api/peer/print", peerAuth, async (req, res) => {
   try {
-    const results = await queue.run("peer-print", async () => {
+    // `all: true` = every label from today (not just unprinted), matching the
+    // hub's "Print All Today's Labels" action.
+    const all = !!(req.body && req.body.all);
+    const results = await queue.run(all ? "peer-print-all" : "peer-print", async () => {
       const client = await getClient();
-      return printNewLabels(client, { open: false });
+      return printNewLabels(client, { open: false, all });
     });
     const payload = results.map((r) => ({
       channel: r.channel,
@@ -193,13 +196,14 @@ app.post("/api/peer/print", peerAuth, async (req, res) => {
   }
 });
 
-async function fetchPeer(peer) {
+async function fetchPeer(peer, { all = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 180000); // peer may be mid-cycle; allow up to 3 min
   try {
     const r = await fetch(`${peer.url}/api/peer/print`, {
       method: "POST",
-      headers: { "X-Agent-Token": sharedSecret() },
+      headers: { "X-Agent-Token": sharedSecret(), "Content-Type": "application/json" },
+      body: JSON.stringify({ all }),
       signal: controller.signal,
     });
     if (!r.ok) {
@@ -223,18 +227,21 @@ app.post("/api/print-combined", async (req, res) => {
   try {
     // Optional source filter: "all" (default), "local", or a peer's name.
     const source = (req.body && req.body.source) || "all";
+    // allToday: every label from today rather than only unprinted ones —
+    // "Print All Today's Labels", applied across ALL machines, not just local.
+    const allToday = !!(req.body && req.body.all);
     const wantLocal = source === "all" || source === "local";
     const peers = listPeers().filter(() => source === "all" || source !== "local").filter((p) => source === "all" || source === p.name);
     const localLabel = selfName() || "local";
 
     const [localSettled, peerSettled] = await Promise.allSettled([
       wantLocal
-        ? queue.run("print", async () => {
+        ? queue.run(allToday ? "print-all" : "print", async () => {
             const client = await getClient();
-            return printNewLabels(client, { open: false });
+            return printNewLabels(client, { open: false, all: allToday });
           })
         : Promise.resolve([]),
-      Promise.all(peers.map(fetchPeer)),
+      Promise.all(peers.map((p) => fetchPeer(p, { all: allToday }))),
     ]);
 
     const bySource = new Map(); // channel -> { pdfBuffers, pickRowArrays, counts, sourceNames }
@@ -267,7 +274,8 @@ app.post("/api/print-combined", async (req, res) => {
     }
 
     if (!bySource.size) {
-      res.json({ message: warnings.length ? `No labels. ${warnings.join(" ")}` : "No new labels to print.", warnings });
+      const none = allToday ? "No labels found for today." : "No new labels to print.";
+      res.json({ message: warnings.length ? `${none} ${warnings.join(" ")}` : none, warnings });
       return;
     }
 
@@ -281,14 +289,15 @@ app.post("/api/print-combined", async (req, res) => {
     for (const [channel, b] of bySource) {
       const totalCount = b.counts.reduce((s, c) => s + c, 0);
       const mergedPdf = await mergePdfBuffers(b.pdfBuffers);
-      const file = path.join(dayDir, `combined-${day}-${channel}-${stamp}-${totalCount}orders.pdf`);
+      const prefix = allToday ? "combined-all" : "combined";
+      const file = path.join(dayDir, `${prefix}-${day}-${channel}-${stamp}-${totalCount}orders.pdf`);
       fs.writeFileSync(file, mergedPdf);
       combinedFiles.push(file);
 
       const mergedRows = mergePickRows(b.pickRowArrays);
       let pickFile = null;
       if (mergedRows.length) {
-        pickFile = path.join(dayDir, `combined-picklist-${day}-${channel}-${stamp}.xlsx`);
+        pickFile = path.join(dayDir, `${prefix}-picklist-${day}-${channel}-${stamp}.xlsx`);
         await writeRowsToXlsx(mergedRows, pickFile);
         combinedFiles.push(pickFile);
       }
