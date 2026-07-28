@@ -28,7 +28,13 @@ export function sharedSecret() {
 }
 
 export function listPeers() {
-  return loadPeersConfig().peers || [];
+  // Normalize peer URLs: a trailing slash in config would produce
+  // "http://host:4545//api/status", which Express 404s — a silent, confusing
+  // "unreachable". Strip trailing slashes so the config is forgiving.
+  return (loadPeersConfig().peers || []).map((p) => ({
+    ...p,
+    url: String(p.url || "").replace(/\/+$/, ""),
+  }));
 }
 
 // Friendly name for THIS machine (e.g. "shop"), shown in the combined status
