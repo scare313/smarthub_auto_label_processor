@@ -95,6 +95,10 @@ and runs the 15-min processing cycle **internally** instead of via Windows Task
 Scheduler. A single job queue ensures the scheduled cycle and any manual button
 click never run at the same time.
 
+Cycles are **aligned to the clock** — :00, :15, :30, :45 — not to whenever the
+server happened to start. It also runs once immediately on startup so a restart
+doesn't sit idle, and re-arms after each run so it can't drift out of alignment.
+
 ```
 npm run serve
 ```
