@@ -98,38 +98,88 @@ incremental.
 - Return-rate analytics by SKU / reason.
 - Per-return timeline view; export.
 
-## 7. Phased task list
-### Phase 0 — Setup (no app code)
-- [ ] Confirm roles: A/B = Windows agents, C = Ubuntu hub.
-- [ ] Install **Tailscale** on A, B, C, phone. Verify no exit-node; confirm A↔C, B↔C reachable.
-- [ ] Verify SSH + Node LTS on C; pick a data dir (e.g. `/opt/smarthub`).
-- [ ] (Optional) Drive/rclone only if off-site backup wanted.
+## 7. Phased checklist (implementation order, kept up to date)
 
-### Phase 1 — Agent web server on A (then B), retire CLI triggers
-- [ ] HTTP server reusing `src/`; **job queue**; **internal scheduler loop**.
-- [ ] Control page (Process/Print/Print all/Status/Reprint) + **Login button** flow.
-- [ ] Run alongside the current `.bat`/Task Scheduler; verify a few days.
-- [ ] Retire Task Scheduler cron + `SmartHub.bat`; keep debug CLI. Boot auto-start (service).
-- [ ] Repeat on B.
+Legend: ✅ done · 🔶 partial/superseded · ⬜ pending · 🚧 blocked
 
-### Phase 2 — Push data to C
-- [ ] Agents POST `status.json` + label PDFs + `returns.json` + `otps.json` to C's ingest API each cycle.
+### Phase 0 — Setup (no app code) — ✅ DONE (2026-07-27)
+- [x] Confirm roles: A = Bludo PC, B = Shop PC (Windows agents), C = Server (Ubuntu hub).
+- [x] Install **Tailscale** on A, B, C, phone. No exit-node configured. A↔C and A↔B
+      reachability confirmed live.
+- [x] Verify SSH + Node on C (Node 24.18.0 / npm 11.16.0 installed via NodeSource);
+      data dir `/opt/smarthub` created.
+- [ ] (Optional) Drive/rclone off-site backup — not set up, not currently needed
+      (see Phase 2 note below — live path turned out to be direct P2P, not Drive).
 
-### Phase 3 — Hub app on C: the Today page
-- [ ] SQLite schema + ingest API. Serve Today page (labels per courier, return OTPs with
-      Reveal, returns list) over Tailscale + password. Per-account fresh/stale status.
+### Phase 1 — Agent web server on A, then B — ✅ DONE
+- [x] HTTP server (`server.js`, Express) reusing `src/` unchanged.
+- [x] **Job queue** (`src/queue.js`) serializing scheduled cycles + manual/peer actions.
+- [x] **Internal scheduler loop** (`src/scheduler.js`) — 15-min cycle runs inside the
+      server process.
+- [x] Control page (`public/index.html`): Process/Print/Print all/Status/Reprint/Login,
+      live log tail, live status dashboard.
+- [x] **Login button** flow (`src/agent.js` `doLogin`) — visible window + polling,
+      replaces the old press-ENTER CLI step.
+- [x] Shutdown handler (SIGINT/SIGTERM/crash) closes the browser cleanly — fixes
+      profile-lock orphans.
+- [x] Running live on **both** Bludo PC and Shop PC; confirmed auto-scheduling active
+      on both (verified via Show Status + live log during this session).
+- [ ] Explicit retirement of `SmartHub.bat` / Task Scheduler cron — left in place as a
+      fallback; not a blocker, can be removed once fully trusted.
+- [ ] Boot auto-start as a proper Windows service (NSSM/node-windows) — not set up yet;
+      currently started manually (`npm run serve`) each time. **Real gap**: server does
+      not survive a reboot unattended.
 
-### Phase 4 — Returns management + anti-theft
-- [ ] Snapshot history; **scan-received** endpoint (USB); reconciliation engine; anomaly
-      alerts; per-return timeline.
+### Phase 1.5 — Cross-machine combined printing — ✅ DONE (2026-07-27, not in original plan)
+Solved the "WhatsApp a PDF between machines" pain **directly peer-to-peer over
+Tailscale**, without needing C at all — done ahead of the hub because it was the
+immediate real problem.
+- [x] `src/peers.js` (shared-secret config), `src/merge.js` (PDF + pick-row merging).
+- [x] `POST /api/peer/print` (token-protected) + `POST /api/print-combined` (hub action).
+- [x] Role-aware UI (hub vs processor) on the control page.
+- [x] Graceful degrade if a peer is unreachable (never blocks local printing).
+- [ ] `config/peers.json` actually filled in + verified end-to-end on both real
+      machines (built and unit-tested; live cross-machine run not yet confirmed by user).
 
-### Blocked on HARs
-- [ ] **Generate Return OTP Report** (unblocks `otps.json`).
-- [ ] **Returns page with dates** (confirms "arriving today").
+### Phase 2 — Push data to C — ⬜ NOT STARTED
+Note: this phase's *printing* motivation is now moot (solved by Phase 1.5, P2P). What's
+still needed here is narrower: getting **returns + OTP data** onto C for the Today page.
+- [ ] Agents POST `status.json` (order counts) to C's ingest API each cycle.
+- [ ] Agents POST `returns.json` (`SearchReturns` snapshot) to C each cycle.
+- [ ] Agents POST `otps.json` (Amazon return-OTP report) to C each cycle. 🚧 blocked —
+      see HARs below.
+- [ ] C's ingest API itself doesn't exist yet (depends on Phase 3).
 
-## 8. First build on the critical path
-Phase 1 on machine A (agent server + control page + internal scheduler). Proves the model
-and lets us drop the `.bat` menu + Task Scheduler before any hub/returns work.
+### Phase 3 — Hub app on C: the Today page — ⬜ NOT STARTED
+Nothing built on Server C yet — it's fully set up (Node, Tailscale) but has zero
+application code.
+- [ ] SQLite schema (orders/labels index, returns, OTPs).
+- [ ] Ingest API (receives Phase 2 pushes from A/B).
+- [ ] Today page UI (shipped labels per courier, return OTPs with Reveal-to-log,
+      returns arriving today) — mockup already designed, not yet built.
+- [ ] Serve over Tailscale + password protection.
+- [ ] Per-account fresh/stale status indicator.
+- [ ] systemd service for boot auto-start on C.
+
+### Phase 4 — Returns management + anti-theft — ⬜ NOT STARTED
+- [ ] Snapshot `SearchReturns` status history over time (delivered-timeline).
+- [ ] USB **scan-received** endpoint + worker flow.
+- [ ] Reconciliation engine (delivered-but-not-scanned → ANOMALY).
+- [ ] Anomaly alert strip on the Today page (+ optional email).
+- [ ] Per-return timeline view.
+
+### Blocked on HARs — 🚧 STILL BLOCKED
+- [ ] **Generate Return OTP Report** screen capture — unblocks `otps.json` / the OTP
+      section of the Today page.
+- [ ] **Returns page showing dates** — confirms whether SmartHub exposes an
+      "expected arrival" date or only in-transit status, for "returns arriving today".
+
+## 8. Next build on the critical path
+Phase 1 and 1.5 are done and live on both machines. The next actual step is **Phase 3**:
+stand up the hub app on Server C (even a minimal version — SQLite + ingest API +
+a bare-bones Today page) so Phase 2's data pushes have somewhere to land. The two
+blocking HARs (§ above) should ideally be captured before or alongside this, since the
+OTP section is a core part of the page's value.
 
 ## 9. Open decisions
 - DB: SQLite now (fine for this scale) → Postgres only if needed.
