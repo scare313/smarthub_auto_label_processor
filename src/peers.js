@@ -31,6 +31,12 @@ export function listPeers() {
   return loadPeersConfig().peers || [];
 }
 
+// Friendly name for THIS machine (e.g. "shop"), shown in the combined status
+// table and print results. Falls back to the OS hostname if unset.
+export function selfName() {
+  return loadPeersConfig().selfName || null;
+}
+
 // This machine is the "hub" (has a printer + peers to pull from) if it has at
 // least one configured outbound peer. Otherwise it's a plain "processor".
 export function isHub() {

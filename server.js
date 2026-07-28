@@ -24,7 +24,7 @@ import { printNewLabels, reprintLast, printDayIST, openFile } from "./src/print.
 import { marketStatus } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
 import { todayIST, LABELS_DIR } from "./src/config.js";
-import { listPeers, sharedSecret, isHub } from "./src/peers.js";
+import { listPeers, sharedSecret, isHub, selfName } from "./src/peers.js";
 import { mergePdfBuffers, mergePickRows } from "./src/merge.js";
 import { writeRowsToXlsx } from "./src/picklist.js";
 import { store } from "./src/store.js";
@@ -51,9 +51,20 @@ async function checkPeerHealth() {
     const timer = setTimeout(() => controller.abort(), 5000);
     try {
       const r = await fetch(`${peer.url}/api/status`, { signal: controller.signal });
-      peerHealth[peer.name] = { url: peer.url, online: r.ok, checkedAt: new Date().toISOString() };
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const s = await r.json();
+      // Carry the peer's own pending count + cached status rows so the hub can
+      // show a combined "waiting to print" total and a both-accounts table.
+      peerHealth[peer.name] = {
+        url: peer.url,
+        online: true,
+        pending: s.pending ?? 0,
+        summary: s.lastSummary || null,
+        sessionAlive: s.sessionAlive ?? null,
+        checkedAt: new Date().toISOString(),
+      };
     } catch {
-      peerHealth[peer.name] = { url: peer.url, online: false, checkedAt: new Date().toISOString() };
+      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, checkedAt: new Date().toISOString() };
     } finally {
       clearTimeout(timer);
     }
@@ -65,11 +76,20 @@ if (isHub()) {
 }
 
 app.get("/api/status", (req, res) => {
+  // Local labels waiting to be printed — cheap (reads the JSON store, no
+  // browser/session involved), so it's safe to poll and to expose to peers.
+  let pending = 0;
+  try {
+    pending = store.listUnprinted({}).length;
+  } catch {}
+
   res.json({
     host: os.hostname(),
+    name: selfName() || os.hostname(),
     date: todayIST(),
     role: isHub() ? "hub" : "processor",
     sessionAlive: getSessionState(),
+    pending,
     lastSummary,
     peers: Object.entries(peerHealth).map(([name, v]) => ({ name, ...v })),
     queue: { busy: queue.busy, current: queue.current, pending: queue.pendingNames },
@@ -201,12 +221,19 @@ async function fetchPeer(peer) {
 // unreachable (never fails the whole action for that).
 app.post("/api/print-combined", async (req, res) => {
   try {
-    const peers = listPeers();
+    // Optional source filter: "all" (default), "local", or a peer's name.
+    const source = (req.body && req.body.source) || "all";
+    const wantLocal = source === "all" || source === "local";
+    const peers = listPeers().filter(() => source === "all" || source !== "local").filter((p) => source === "all" || source === p.name);
+    const localLabel = selfName() || "local";
+
     const [localSettled, peerSettled] = await Promise.allSettled([
-      queue.run("print", async () => {
-        const client = await getClient();
-        return printNewLabels(client, { open: false });
-      }),
+      wantLocal
+        ? queue.run("print", async () => {
+            const client = await getClient();
+            return printNewLabels(client, { open: false });
+          })
+        : Promise.resolve([]),
       Promise.all(peers.map(fetchPeer)),
     ]);
 
@@ -222,7 +249,7 @@ app.post("/api/print-combined", async (req, res) => {
 
     const warnings = [];
     if (localSettled.status === "fulfilled") {
-      for (const r of localSettled.value) addSource(r.channel, fs.readFileSync(r.file), r.pickRows || [], r.count, "local");
+      for (const r of localSettled.value) addSource(r.channel, fs.readFileSync(r.file), r.pickRows || [], r.count, localLabel);
     } else {
       warnings.push(`Local print failed: ${localSettled.reason.message}`);
     }
@@ -266,7 +293,9 @@ app.post("/api/print-combined", async (req, res) => {
         combinedFiles.push(pickFile);
       }
 
-      summaryLines.push(`${channel}: ${totalCount} (${b.sourceNames.join("+")})`);
+      // Per-source breakdown, e.g. "amazon: 20 (shop 12 + bludo 8)"
+      const breakdown = b.sourceNames.map((n, i) => `${n} ${b.counts[i]}`).join(" + ");
+      summaryLines.push(`${channel}: ${totalCount} (${breakdown})`);
       openFile(file);
       if (pickFile) openFile(pickFile);
     }
@@ -274,7 +303,7 @@ app.post("/api/print-combined", async (req, res) => {
     store.setLastPrint(combinedFiles);
     log.ok(`Combined print: ${summaryLines.join(", ")}`);
 
-    const message = `Printed combined: ${summaryLines.join(", ")}.` + (warnings.length ? ` ${warnings.join(" ")}` : "");
+    const message = `Printed — ${summaryLines.join(" · ")}` + (warnings.length ? ` — ${warnings.join(" ")}` : "");
     res.json({ message, warnings });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -302,6 +331,15 @@ app.listen(PORT, () => {
     queue.run("scheduled-cycle", async () => {
       const r = await runCycle({});
       lastCycleAt = new Date().toISOString();
+      // Refresh the cached status table after each cycle so the control page
+      // (and any hub pulling this machine's status) always has fresh numbers
+      // without anyone clicking Refresh.
+      try {
+        const client = await getClient();
+        lastSummary = await marketStatus(client, { date: todayIST() });
+      } catch (e) {
+        log.warn(`Post-cycle status refresh failed: ${e.message}`);
+      }
       return r;
     })
   );

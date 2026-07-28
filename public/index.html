@@ -28,6 +28,10 @@
   button.secondary:active { transform: scale(0.98); }
   button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  .srcpick { display: flex; align-items: center; gap: 8px; margin: 0 0 0.75rem; font-size: 0.82rem; color: #999; }
+  .srcpick select { font-size: 0.82rem; padding: 0.3rem 0.5rem; border-radius: 8px;
+                    border: 1px solid #8883; background: #6663; color: inherit; }
+
   .banner { padding: 0.7rem 1rem; border-radius: 10px; font-size: 0.88rem; margin-bottom: 1rem; display: none; }
   .banner.show { display: block; }
   .banner.success { background: #2ecc7122; color: #2ecc71; border: 1px solid #2ecc7155; }
@@ -40,6 +44,9 @@
   table.dash thead th { color: #999; font-weight: 600; border-bottom: 1px solid #8884; }
   table.dash tbody tr:last-child { font-weight: 700; border-top: 1px solid #8884; }
   table.dash td.warn { color: #f1c40f; }
+  table.dash td.acct { color: #999; font-size: 0.8rem; }
+  table.dash tr.subtotal { color: #aaa; font-style: italic; }
+  table.dash tr.subtotal td { border-bottom: 1px solid #8883; }
   .dash-note { font-size: 0.75rem; color: #888; margin: 0 0 1.5rem; }
   .dash-empty { font-size: 0.85rem; color: #888; padding: 0.5rem 0 1.5rem; }
 
@@ -62,6 +69,11 @@
     <span id="hero-label">Print New Labels</span>
     <span class="hint" id="hero-hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
   </button>
+
+  <div class="srcpick hub-only" id="row-source">
+    <label for="sel-source">Print from</label>
+    <select id="sel-source"><option value="all">All machines</option></select>
+  </div>
 
   <div class="row hub-only" id="row-print-secondary">
     <button class="secondary" id="btn-print-all">Print All Today's Labels</button>
@@ -106,29 +118,54 @@ function setBanner(text, kind) {
   if (kind !== "info") bannerTimer = setTimeout(() => el.classList.remove("show"), 8000);
 }
 
-function renderDash(rows) {
+// Renders a combined table across machines. `sources` = [{name, rows}], so a hub
+// shows both its own account and each peer's; a lone processor shows just itself.
+function renderDash(sources) {
   const wrap = $("dash-wrap");
-  if (!rows || !rows.length) { wrap.innerHTML = '<div class="dash-empty">No data yet — click Show Status below or wait for the next cycle.</div>'; return; }
-  const t = rows.reduce((a, r) => ({ total: a.total + r.total, processed: a.processed + r.processed, waiting: a.waiting + r.waiting, printed: a.printed + r.printed, cancelled: a.cancelled + r.cancelled }),
-    { total: 0, processed: 0, waiting: 0, printed: 0, cancelled: 0 });
-  const rowHtml = (r) => `<tr><td>${r.key}</td><td>${r.total}</td><td>${r.processed}</td>` +
-    `<td${r.waiting > 0 ? ' class="warn"' : ""}>${r.waiting}</td><td>${r.printed}</td><td>${r.cancelled}</td></tr>`;
+  const withRows = (sources || []).filter((s) => s.rows && s.rows.length);
+  if (!withRows.length) { wrap.innerHTML = '<div class="dash-empty">No data yet — click Refresh, or wait for the next 15-min cycle.</div>'; return; }
+
+  const multi = withRows.length > 1;
+  const zero = { total: 0, processed: 0, waiting: 0, printed: 0, cancelled: 0 };
+  const grand = { ...zero };
+  let body = "";
+
+  const cells = (r) => `<td>${r.total}</td><td>${r.processed}</td>` +
+    `<td${r.waiting > 0 ? ' class="warn"' : ""}>${r.waiting}</td><td>${r.printed}</td><td>${r.cancelled}</td>`;
+
+  for (const s of withRows) {
+    const sub = s.rows.reduce((a, r) => ({
+      total: a.total + r.total, processed: a.processed + r.processed, waiting: a.waiting + r.waiting,
+      printed: a.printed + r.printed, cancelled: a.cancelled + r.cancelled }), { ...zero });
+    for (const k of Object.keys(grand)) grand[k] += sub[k];
+    for (const r of s.rows) {
+      body += `<tr>${multi ? `<td class="acct">${s.name}</td>` : ""}<td>${r.key}</td>${cells(r)}</tr>`;
+    }
+    if (multi) body += `<tr class="subtotal"><td class="acct">${s.name}</td><td>subtotal</td>${cells(sub)}</tr>`;
+  }
+  body += `<tr>${multi ? "<td></td>" : ""}<td>TOTAL</td>${cells(grand)}</tr>`;
+
   wrap.innerHTML =
-    '<table class="dash"><thead><tr><th>Channel</th><th>Total</th><th>Processed</th><th>Waiting</th><th>Printed</th><th>Cancelled</th></tr></thead><tbody>' +
-    rows.map(rowHtml).join("") + rowHtml({ ...t, key: "TOTAL" }) +
-    '</tbody></table><div class="dash-note">Processed = packed/shipped in SmartHub &middot; Waiting = not yet packed &middot; Printed = labels printed locally</div>';
+    '<table class="dash"><thead><tr>' + (multi ? "<th>Account</th>" : "") +
+    '<th>Channel</th><th>Total</th><th>Processed</th><th>Waiting</th><th>Printed</th><th>Cancelled</th></tr></thead><tbody>' +
+    body +
+    '</tbody></table><div class="dash-note">Processed = packed/shipped in SmartHub &middot; Waiting = not yet packed &middot; Printed = labels printed</div>';
 }
 
-async function post(path, { silent } = {}) {
+async function post(path, { silent, body } = {}) {
   clearLogView();
   if (!silent) setBanner("Working…", "info");
   document.querySelectorAll("button").forEach((b) => (b.disabled = true));
   try {
-    const r = await fetch(path, { method: "POST" });
+    const opts = { method: "POST" };
+    if (body) {
+      opts.headers = { "Content-Type": "application/json" };
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(path, opts);
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || r.statusText);
-    if (!silent) setBanner(j.message || "Done.", "success");
-    if (j.rows) renderDash(j.rows);
+    if (!silent) setBanner(j.message || "Done.", j.warnings && j.warnings.length ? "info" : "success");
   } catch (e) {
     setBanner("Error: " + e.message, "error");
   }
@@ -157,45 +194,78 @@ $("btn-summary").onclick = () => post("/api/summary");
 // - "processor" (e.g. Bludo PC, no printer): hero = Process Orders Now; local
 //   printing stays available as a fallback, tucked into Advanced.
 let roleApplied = null;
+let pendingTotal = 0;
+
 function applyRole(role) {
-  if (role === roleApplied) return;
-  roleApplied = role;
   const hero = $("btn-hero");
   if (role === "hub") {
-    $("hero-label").textContent = "Print New Labels";
-    $("hero-hint").textContent = "Combines every new label from this machine and any connected machines into one PDF per marketplace (+ pick list)";
-    hero.onclick = () => post("/api/print-combined");
-    $("row-print-secondary").style.display = "";
-    $("row-advanced-hub").style.display = "";
-    $("row-advanced-processor").style.display = "none";
-    $("row-advanced-processor2").style.display = "none";
+    // Show what's actually waiting, so the employee knows before clicking.
+    $("hero-label").textContent = pendingTotal > 0 ? `Print New Labels (${pendingTotal} waiting)` : "Print New Labels";
+    if (role !== roleApplied) {
+      $("hero-hint").textContent = "Combines new labels from all machines into one PDF per marketplace (+ pick list)";
+      hero.onclick = () => post("/api/print-combined", { body: { source: $("sel-source").value } });
+      $("row-source").style.display = "";
+      $("row-print-secondary").style.display = "";
+      $("row-advanced-hub").style.display = "";
+      $("row-advanced-processor").style.display = "none";
+      $("row-advanced-processor2").style.display = "none";
+    }
   } else {
     $("hero-label").textContent = "Process Orders Now";
-    $("hero-hint").textContent = "Also runs automatically every 15 min — click to run immediately";
-    hero.onclick = () => post("/api/run");
-    $("row-print-secondary").style.display = "none";
-    $("row-advanced-hub").style.display = "none";
-    $("row-advanced-processor").style.display = "";
-    $("row-advanced-processor2").style.display = "";
+    if (role !== roleApplied) {
+      $("hero-hint").textContent = "Also runs automatically every 15 min — click to run immediately";
+      hero.onclick = () => post("/api/run");
+      $("row-source").style.display = "none";
+      $("row-print-secondary").style.display = "none";
+      $("row-advanced-hub").style.display = "none";
+      $("row-advanced-processor").style.display = "";
+      $("row-advanced-processor2").style.display = "";
+    }
   }
+  roleApplied = role;
 }
 
 async function refreshStatus() {
   try {
     const r = await fetch("/api/status");
     const j = await r.json();
-    const dot = j.sessionAlive === true ? "ok" : j.sessionAlive === false ? "bad" : "unk";
+    const selfLabel = j.name || j.host;
+    const peers = j.peers || [];
+
+    // Machines row: this machine + every peer, each with its own health dot.
+    const machineChip = (name, ok, extra) =>
+      `<span><span class="dot ${ok === true ? "ok" : ok === false ? "bad" : "unk"}"></span>${name}${extra || ""}</span>`;
+    const machinesHtml =
+      machineChip(selfLabel, j.sessionAlive, j.sessionAlive === false ? " (login needed)" : "") +
+      peers.map((p) => machineChip(p.name, p.online, p.online ? "" : " (unreachable)")).join("");
+
     const queueText = j.queue.busy ? `running: ${j.queue.current.name}` : "idle";
-    const peersHtml = (j.peers || [])
-      .map((p) => `<span><span class="dot ${p.online ? "ok" : "bad"}"></span>${p.name}: ${p.online ? "online" : "unreachable"}</span>`)
-      .join("");
     $("status").innerHTML =
-      `<span class="dot ${dot}"></span>Session: ${j.sessionAlive === null ? "unknown" : j.sessionAlive ? "alive" : "expired"}` +
+      machinesHtml +
       `<span>Queue: ${queueText}</span>` +
-      (j.lastCycleAt ? `<span>Last auto-cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last auto-cycle: none yet</span>") +
-      peersHtml;
-    $("hostinfo").textContent = `${j.host} · date ${j.date} · auto-processing every 15 min`;
-    if (j.lastSummary) renderDash(j.lastSummary);
+      (j.lastCycleAt ? `<span>Last cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last cycle: none yet</span>");
+    $("hostinfo").textContent = `${selfLabel} · ${j.date} · auto-processing every 15 min`;
+
+    // Combined status across this machine + peers.
+    renderDash([{ name: selfLabel, rows: j.lastSummary }, ...peers.map((p) => ({ name: p.name, rows: p.summary }))]);
+
+    // Waiting-to-print count, on the hero button itself.
+    const localPending = j.pending || 0;
+    const peerPending = peers.reduce((s, p) => s + (p.pending || 0), 0);
+    pendingTotal = j.role === "hub" ? localPending + peerPending : localPending;
+
+    // Keep the source dropdown in sync with the known machines.
+    const sel = $("sel-source");
+    const wanted = ["all", "local", ...peers.map((p) => p.name)].join(",");
+    if (sel.dataset.built !== wanted) {
+      sel.dataset.built = wanted;
+      const prev = sel.value;
+      sel.innerHTML =
+        `<option value="all">All machines</option><option value="local">${selfLabel} only</option>` +
+        peers.map((p) => `<option value="${p.name}">${p.name} only</option>`).join("");
+      if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
+    }
+
     applyRole(j.role);
   } catch (e) {
     $("status").textContent = "Could not reach server.";
