@@ -319,6 +319,22 @@ app.post("/api/print-combined", async (req, res) => {
   }
 });
 
+// Open today's labels folder in Explorer ON THE SERVER MACHINE (where the PDFs
+// and the printer are). Falls back to the labels root if today's folder doesn't
+// exist yet. Purely local — nothing is sent anywhere.
+app.post("/api/open-labels", (req, res) => {
+  try {
+    const day = printDayIST();
+    const dayDir = path.join(LABELS_DIR, day);
+    const target = fs.existsSync(dayDir) ? dayDir : LABELS_DIR;
+    fs.mkdirSync(target, { recursive: true });
+    openFile(target);
+    res.json({ message: `Opened ${target}` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post("/api/login", (req, res) => {
   // Respond immediately — login can take minutes (waiting on OTP entry in the
   // visible window that pops up on THIS server machine's screen).

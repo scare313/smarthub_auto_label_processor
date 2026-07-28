@@ -17,6 +17,22 @@
   .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
   .ok { background: #2ecc71; } .bad { background: #e74c3c; } .unk { background: #999; }
 
+  .loginalert { display: none; align-items: center; justify-content: space-between; gap: 12px;
+                padding: 0.85rem 1rem; border-radius: 12px; margin-bottom: 1rem;
+                background: #e74c3c22; border: 1px solid #e74c3c88; color: #e74c3c; }
+  .loginalert.show { display: flex; }
+  .loginalert button { background: #e74c3c; color: #fff; border: none; border-radius: 8px;
+                       padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+
+  .herorow { display: flex; gap: 10px; align-items: stretch; margin-bottom: 0.75rem; }
+  .herorow .hero { flex: 1; margin-bottom: 0; }
+  .squarebtn { flex: 0 0 88px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+               gap: 4px; border-radius: 14px; border: 1px solid #8883; background: #6663;
+               color: inherit; cursor: pointer; font-size: 0.78rem; }
+  .squarebtn:active { transform: scale(0.98); }
+  .squarebtn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .squarebtn .ico { font-size: 1.5rem; line-height: 1; }
+
   .hero { width: 100%; font-size: 1.15rem; font-weight: 700; padding: 1.4rem; border-radius: 14px;
           border: none; cursor: pointer; background: #2ecc71; color: #04342c; margin-bottom: 0.75rem; }
   .hero:active { transform: scale(0.99); }
@@ -65,10 +81,24 @@
   <div class="statusbar" id="status">Loading status…</div>
   <div class="banner" id="banner"></div>
 
-  <button class="hero" id="btn-hero">
-    <span id="hero-label">Print New Labels</span>
-    <span class="hint" id="hero-hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
-  </button>
+  <div class="loginalert" id="login-alert">
+    <div>
+      <strong>Amazon login expired</strong>
+      <div id="login-alert-text" style="font-size:0.85rem; margin-top:2px;"></div>
+    </div>
+    <button id="btn-login-alert">Log in now</button>
+  </div>
+
+  <div class="herorow">
+    <button class="hero" id="btn-hero">
+      <span id="hero-label">Print New Labels</span>
+      <span class="hint" id="hero-hint">Combines every new label into one PDF per marketplace (+ pick list)</span>
+    </button>
+    <button class="squarebtn" id="btn-folder" title="Open today's labels folder">
+      <span class="ico">&#128193;</span>
+      <span class="lbl">Files</span>
+    </button>
+  </div>
 
   <div class="srcpick hub-only" id="row-source">
     <label for="sel-source">Print from</label>
@@ -190,6 +220,10 @@ $("btn-print-local").onclick = () => post("/api/print");
 $("btn-print-all-local").onclick = () => post("/api/print-all");
 $("btn-reprint-local").onclick = () => post("/api/reprint");
 $("btn-summary").onclick = () => post("/api/summary");
+// Opens Explorer on the machine running the server (where the PDFs live), which
+// may not be the machine you're viewing this page from — so confirm what happened.
+$("btn-folder").onclick = () => post("/api/open-labels");
+$("btn-login-alert").onclick = loginHandler;
 
 // Role decides the hero action + which secondary controls show:
 // - "hub" (has peers configured, e.g. Shop PC with the printer): hero = Print
@@ -248,6 +282,23 @@ async function refreshStatus() {
       `<span>Queue: ${queueText}</span>` +
       (j.lastCycleAt ? `<span>Last cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last cycle: none yet</span>");
     $("hostinfo").textContent = `${selfLabel} · ${j.date} · auto-processing every 15 min`;
+
+    // Logged-out warning — impossible to miss, because while a session is dead
+    // that machine processes NOTHING. Covers this machine and any peer.
+    const deadLocal = j.sessionAlive === false ? [selfLabel] : [];
+    const deadPeers = peers.filter((p) => p.online && p.sessionAlive === false).map((p) => p.name);
+    const dead = [...deadLocal, ...deadPeers];
+    const alertEl = $("login-alert");
+    if (dead.length) {
+      const isLocal = deadLocal.length > 0;
+      $("login-alert-text").textContent = isLocal
+        ? `Orders are NOT being processed on ${selfLabel}. Click below, then finish the OTP in the window that opens on that PC.`
+        : `Orders are NOT being processed on: ${dead.join(", ")}. Open that machine's page and log in there.`;
+      $("btn-login-alert").style.display = isLocal ? "" : "none";
+      alertEl.classList.add("show");
+    } else {
+      alertEl.classList.remove("show");
+    }
 
     // Combined status across this machine + peers.
     renderDash([{ name: selfLabel, rows: j.lastSummary }, ...peers.map((p) => ({ name: p.name, rows: p.summary }))]);
