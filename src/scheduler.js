@@ -10,7 +10,7 @@ import { processChannel } from "./pipeline.js";
 import { raiseSessionAlert, clearSessionAlert } from "./alert.js";
 import { store } from "./store.js";
 import { log } from "./log.js";
-import { getClient } from "./agent.js";
+import { getClient, checkSession } from "./agent.js";
 
 export async function runCycle({ date } = {}) {
   const shipDate = date || todayIST();
@@ -19,7 +19,10 @@ export async function runCycle({ date } = {}) {
 
   log.info(`Cycle start — ${shipDate} — channels: ${channels.map((c) => c.key).join(", ")}`);
 
-  const alive = await client.checkSession();
+  // Use agent.js's checkSession (not client.checkSession directly) so the
+  // cached session state — what the web page's status bar reads — actually
+  // gets updated every cycle, not just when the Login button runs.
+  const alive = await checkSession();
   if (!alive) {
     await raiseSessionAlert("checkSession failed at start of cycle");
     return { ok: false, reason: "session-expired" };

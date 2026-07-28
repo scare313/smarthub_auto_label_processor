@@ -186,10 +186,14 @@ async function refreshStatus() {
     const j = await r.json();
     const dot = j.sessionAlive === true ? "ok" : j.sessionAlive === false ? "bad" : "unk";
     const queueText = j.queue.busy ? `running: ${j.queue.current.name}` : "idle";
+    const peersHtml = (j.peers || [])
+      .map((p) => `<span><span class="dot ${p.online ? "ok" : "bad"}"></span>${p.name}: ${p.online ? "online" : "unreachable"}</span>`)
+      .join("");
     $("status").innerHTML =
       `<span class="dot ${dot}"></span>Session: ${j.sessionAlive === null ? "unknown" : j.sessionAlive ? "alive" : "expired"}` +
       `<span>Queue: ${queueText}</span>` +
-      (j.lastCycleAt ? `<span>Last auto-cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last auto-cycle: none yet</span>");
+      (j.lastCycleAt ? `<span>Last auto-cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last auto-cycle: none yet</span>") +
+      peersHtml;
     $("hostinfo").textContent = `${j.host} · date ${j.date} · auto-processing every 15 min`;
     if (j.lastSummary) renderDash(j.lastSummary);
     applyRole(j.role);
@@ -221,6 +225,16 @@ refreshStatus();
 refreshLog();
 setInterval(refreshStatus, 5000);
 setInterval(refreshLog, 3000);
+
+// Fetch a real status table once on load if nothing's cached yet, instead of
+// leaving "Today's status" stuck on "Loading..." until someone clicks Refresh.
+(async () => {
+  try {
+    const r = await fetch("/api/status");
+    const j = await r.json();
+    if (!j.lastSummary) post("/api/summary", { silent: true });
+  } catch {}
+})();
 </script>
 </body>
 </html>

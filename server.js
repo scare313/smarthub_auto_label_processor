@@ -39,6 +39,31 @@ app.use(express.static(path.join(__dirname, "public")));
 let lastCycleAt = null;
 let lastSummary = null; // cached rows from the last /api/summary call
 
+// --- Peer health (hub only): a lightweight background ping of each configured
+// peer's own /api/status (cheap — no browser/session touched on the peer side)
+// so the control page can show "online"/"unreachable" for each machine without
+// waiting for a print action to find out. -------------------------------------
+let peerHealth = {}; // name -> { url, online, checkedAt }
+
+async function checkPeerHealth() {
+  for (const peer of listPeers()) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const r = await fetch(`${peer.url}/api/status`, { signal: controller.signal });
+      peerHealth[peer.name] = { url: peer.url, online: r.ok, checkedAt: new Date().toISOString() };
+    } catch {
+      peerHealth[peer.name] = { url: peer.url, online: false, checkedAt: new Date().toISOString() };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+if (isHub()) {
+  checkPeerHealth();
+  setInterval(checkPeerHealth, 20000);
+}
+
 app.get("/api/status", (req, res) => {
   res.json({
     host: os.hostname(),
@@ -46,6 +71,7 @@ app.get("/api/status", (req, res) => {
     role: isHub() ? "hub" : "processor",
     sessionAlive: getSessionState(),
     lastSummary,
+    peers: Object.entries(peerHealth).map(([name, v]) => ({ name, ...v })),
     queue: { busy: queue.busy, current: queue.current, pending: queue.pendingNames },
     lastCycleAt,
   });
