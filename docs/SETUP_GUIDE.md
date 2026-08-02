@@ -418,23 +418,38 @@ labels printed before the rebuild. Check against your records on the first day.
 
 ---
 
-## Optional — start automatically when the PC turns on
+## Recommended — start automatically, and restart after a crash
 
-Avoids having to run `npm run serve` manually after every restart.
+Without this, the agent stops whenever the PC restarts (or the window is closed)
+and **orders silently stop being processed** until someone notices.
 
-1. Press `Windows key`, type **Task Scheduler**, open it
-2. Click **Create Basic Task**
-3. Name: `SmartHub Agent` → Next
-4. Trigger: **When I log on** → Next
-5. Action: **Start a program** → Next
-6. Program/script: `cmd.exe`
-7. Add arguments: `/c cd /d C:\Automation\auto_order_processor && npm run serve`
-8. Finish
+In the project folder, double-click:
 
-> [SCREENSHOT: Task Scheduler "Create Basic Task" action screen]
+```
+Setup Autostart.bat
+```
 
-> Note: this method hasn't been verified on these machines yet — after setting
-> it up, restart the PC and check `http://localhost:4545` to confirm it worked.
+That's it. From now on the agent starts when you log in, and **restarts itself
+automatically if it ever crashes**.
+
+To undo: double-click `Remove Autostart.bat`.
+
+**Test it:** restart the PC, log in, wait ~20 seconds, then open
+`http://localhost:4545`. It should already be running.
+
+### Two things to know
+
+**It triggers on _log in_, not power-on.** If the PC reboots and sits at the
+lock screen, nothing runs until someone logs in. For a truly unattended PC,
+enable Windows automatic sign-in. (That's a security trade-off — anyone with
+physical access gets straight into the desktop. Reasonable for a locked back
+office, not for a public counter.)
+
+**Why not a "proper" Windows service?** Amazon's SSO login stalls in a headless
+browser, so the agent runs a real (off-screen) browser window, which needs a
+normal desktop session. A Windows service runs with no desktop, so logins would
+fail. "At log on" is the correct approach here, not a limitation we're working
+around.
 
 ---
 

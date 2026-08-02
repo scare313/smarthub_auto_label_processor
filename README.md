@@ -155,6 +155,20 @@ ever unavailable). If a peer is unreachable when the hub prints, it prints its o
 labels anyway and shows a warning naming the unreachable peer — it never blocks on
 one machine being down.
 
+## Watchdog (processing stopped)
+
+Separate from the session alert below, the server checks every 5 minutes whether
+processing has silently **stopped**, and emails you once when it does and once
+when it recovers:
+
+- **This machine** — no cycle completed for 45+ minutes (stalled, hung, asleep).
+- **A peer** (hub only) — unreachable, or reachable but not processing.
+
+> **Known gap:** a machine can't report its own total death. If the PC is powered
+> off or the process is killed outright, its *peer* will report it — but if the
+> hub itself dies, nothing emails you. Closing that fully needs an external
+> watcher (e.g. the always-on Ubuntu server).
+
 ## Email alerts (login expiry + failures)
 
 If the Amazon session expires, the processor emails you (once when it goes down, once

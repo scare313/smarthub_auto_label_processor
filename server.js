@@ -25,6 +25,7 @@ import { marketStatus } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
 import { todayIST, LABELS_DIR } from "./src/config.js";
 import { listPeers, sharedSecret, isHub, selfName } from "./src/peers.js";
+import { checkHeartbeat } from "./src/heartbeat.js";
 import { mergePdfBuffers, mergePickRows } from "./src/merge.js";
 import { writeRowsToXlsx } from "./src/picklist.js";
 import { store } from "./src/store.js";
@@ -61,10 +62,11 @@ async function checkPeerHealth() {
         pending: s.pending ?? 0,
         summary: s.lastSummary || null,
         sessionAlive: s.sessionAlive ?? null,
+        lastCycleAt: s.lastCycleAt ?? null, // so the hub can spot a stalled peer
         checkedAt: new Date().toISOString(),
       };
     } catch {
-      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, checkedAt: new Date().toISOString() };
+      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, lastCycleAt: null, checkedAt: new Date().toISOString() };
     } finally {
       clearTimeout(timer);
     }
@@ -74,6 +76,21 @@ if (isHub()) {
   checkPeerHealth();
   setInterval(checkPeerHealth, 20000);
 }
+
+// Watchdog: emails once if processing stops here or on a peer, and once when it
+// recovers. Runs every 5 min — often enough to be useful, rare enough that a
+// failing email server can't spam. Never throws into the event loop.
+setInterval(() => {
+  checkHeartbeat({
+    selfName: selfName() || os.hostname(),
+    lastCycleAt,
+    peers: Object.entries(peerHealth).map(([name, v]) => ({
+      name,
+      online: v.online,
+      lastCycleAt: v.lastCycleAt,
+    })),
+  }).catch((e) => log.warn(`Heartbeat check failed: ${e.message}`));
+}, 5 * 60 * 1000);
 
 app.get("/api/status", (req, res) => {
   // Local labels waiting to be printed — cheap (reads the JSON store, no
