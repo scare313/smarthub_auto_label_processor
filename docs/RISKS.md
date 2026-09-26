@@ -23,7 +23,7 @@ implementation so trade-offs are deliberate rather than discovered in production
 | **Back up `state.json` only**, not `labels/` | ✅ Removes the customer-PII risk entirely — *verified*: `state.json` holds only `orderId, channel, date, labelFile, trackingId, status, ts, printed, printedAt, printBatchId`. No names, addresses, or phone numbers. Also removes the Drive-quota risk. |
 | **Prune shipped/picked-up orders from `state.json`** | ✅ Keeps the file small and fast. ⚠️ Introduces a reprint trap — see §I. |
 | **Process next-day orders after 5 PM** (single fixed time, not per-channel cutoffs) | ✅ Simpler than per-channel logic, and after the day's pickup rush. ⚠️ Partial — see §B7. |
-| **Print only labels whose ship date is today** | ✅ **Solves the biggest risk (old B1)** — today's and tomorrow's labels can no longer mix in one PDF. ⚠️ Introduces a stranding risk — see §J. |
+| **Print today's labels + any earlier unprinted, but never future ship dates** | ✅ **Solves the biggest risk (old B1)** — tomorrow's labels can't mix into today's PDF — **without** the stranding that a strict today-only filter would have caused. See §J (now implemented). |
 
 Net effect: the two blockers on next-day processing are now **one solved** (label
 mixing) and **one still open** (attempt limit, §C).
@@ -48,13 +48,13 @@ mixing) and **one still open** (attempt limit, §C).
 
 | # | Risk | Sev | Code | Mitigation |
 |---|---|---|---|---|
-| B1 | ~~Today's and tomorrow's labels mix in one PDF~~ | ✅ | — | **Resolved** by the today-only print filter (§J covers its own risk). |
+| B1 | ~~Today's and tomorrow's labels mix in one PDF~~ | ✅ | — | **Resolved** — the print filter (§J) excludes future ship dates. |
 | B2 | **Labelling commits a courier pickup slot and starts the SLA clock.** A day-early label may book the wrong day's slot. | 🔴 | — | **Verify with `--limit 1`** on one real next-day order; check the slot in SmartHub. Same method as the `pickupSlotId` fix. Still unverified. |
 | B3 | **More lead time → more cancellations after labelling.** An order cancelled overnight is already labelled. | 🔴 | M | Makes printed-cancelled (§F) more valuable; overnight is the window where it bites. |
 | B4 | **Compounds the missing retry limit.** Next-day orders are likelier to be not-ready (`LABEL_NOT_READY`); without an attempt cap the tool retries every 15 min until SmartHub blocks them — the `FORBIDDEN: Maximum number of retry reached` incident of 30 June. | 🔴 | — | **Build §C first.** Still the open blocker. |
 | B5 | Roughly doubles work per cycle → longer cycles, bigger batches, more 503s (seen on FBA at 85 orders). | 🟡 | S | Batching exists; may need a smaller batch size. Reduced by running at 5 PM, after the rush. |
 | B6 | Status table and waiting-count show **today only** — tomorrow's work is invisible on the page. | 🟡 | M | Extend the status view to cover both dates. |
-| B7 | **5 PM is after Amazon's cutoff (1:45 PM) but *before* Flipkart's (11:45 PM) and Meesho's (10:50 PM).** So for those channels, today's orders are still arriving while tomorrow's are being processed — both days genuinely in flight at once. | 🟡 | S | Acceptable *because* of the today-only print filter. If per-channel timing is ever wanted, the cutoffs are already in config. |
+| B7 | **5 PM is after Amazon's cutoff (1:45 PM) but *before* Flipkart's (11:45 PM) and Meesho's (10:50 PM).** So for those channels, today's orders are still arriving while tomorrow's are being processed — both days genuinely in flight at once. | 🟡 | S | Acceptable *because* the print filter (§J) keeps future-dated labels out of the PDF. If per-channel timing is ever wanted, the cutoffs are already in config. |
 | B8 | Assumes stock exists for tomorrow's orders. | 🟡 | L | Accepted; inventory awareness isn't built. |
 
 **Change size: ~35 lines** (a `datesForChannel()` helper + a loop in `scheduler.js`).
@@ -148,20 +148,29 @@ reconciliation step in a way that can cause **reprints**.
 
 ---
 
-## J. NEW — Today-only print filter ⚠️
+## J. Print-date filter — ✅ IMPLEMENTED
 
-Filtering prints to today's ship date solves the mixing problem, but creates a
-way for labels to go **silently missing**.
+**Rule: print everything unprinted with ship date _today or earlier_; exclude
+ship dates in the _future_.**
 
-| # | Risk | Sev | Code | Mitigation |
+The original plan was "today only". Real data killed it: on 26 Sept the queue
+held 10 Meesho orders labelled on the 25th and never printed. A strict
+today-only filter would have made them invisible forever — a second silent-loss
+bug, on top of the 19 orders already lost to the midnight rollover.
+
+| # | Risk | Sev | Code | Status |
 |---|---|---|---|---|
-| J1 | **Yesterday's unprinted labels become invisible.** If a print failed or was missed, those labels are filtered out permanently and never surface again. | 🔴 | S | Show a warning when unprinted labels exist for *past* dates ("3 unprinted labels from 01 Aug"), and let "Print All" reach them. |
-| J2 | A ship date that shifts (order re-planned to a later date) drops out of today's view. | 🟡 | S | Covered by the same past-date warning. |
-| J3 | Staff expect "Print New Labels" to mean *everything* new; it now silently means *today's*. | 🟡 | S | Say so on the button/hint text. |
+| J1 | ~~Yesterday's unprinted labels become invisible~~ | ✅ | S | **Resolved by design** — past dates are included, so nothing strands. No rescue warning needed. |
+| J2 | ~~A shifted ship date drops out of view~~ | ✅ | — | **Resolved** — only future dates are excluded; a date moved earlier still prints. |
+| J3 | Staff expect "Print New Labels" to mean everything new. | 🟢 | S | Now accurate again — it *is* everything new, minus future-dated orders that shouldn't ship yet. |
 
-**Change size: S** (~30 lines: a date filter plus the stranded-labels warning).
-**J1's warning should ship with the filter, not after it** — otherwise the filter
-converts a visible problem into an invisible one.
+**Implemented:** `store.listUnprinted({ maxDate })`, with `print.js` passing
+`todayIST()`. Verified read-only against the live queue: 38 of 38 orders still
+print today (zero change), and when the 26th is treated as future, all 28 of its
+orders are correctly excluded while the 25th's 10 still come through.
+
+**Note:** this is currently a no-op — no future-dated labels exist until §B ships.
+It was landed first precisely so §B can't introduce mixed-day PDFs.
 
 ---
 
@@ -187,6 +196,6 @@ converts a visible problem into an invisible one.
 | 4 | **Attempt limit + exceptions (§C)** | M | Fixes a failure that already happened. **Prerequisite for §B.** |
 | 5 | **Cutoff warnings (§D)** | S | Uses cutoffs already sitting unused in config. |
 | 6 | **Printed-cancelled (§F)** | M | Becomes more valuable once §B adds overnight lead time. |
-| 7 | **Today-only print filter + stranded warning (§J)** | S | Ship together, before §B. |
+| 7 | ~~Print-date filter (§J)~~ | S | ✅ **Done** — today + earlier, never future. |
 | 8 | **Next-day processing (§B)** | S | Only after §C and §J, and once B2 (pickup slot) is verified on one order. |
 | 9 | **Special-order flags (§G)** | M | Measure frequency first. |

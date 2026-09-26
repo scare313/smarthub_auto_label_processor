@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { exec } from "node:child_process";
-import { LABELS_DIR } from "./config.js";
+import { LABELS_DIR, todayIST } from "./config.js";
 import { resolveChannel } from "./config.js";
 import { store } from "./store.js";
 import { log } from "./log.js";
@@ -44,7 +44,8 @@ export function openFile(file) {
 export async function printNewLabels(client, { channelKeys, date, open = true, all = false } = {}) {
   const source = all
     ? store.listLabeled({ date: date || printDayIST() }) // all labeled for the day
-    : store.listUnprinted({ date }); // only unprinted
+    // Only unprinted: today plus any earlier day missed, never a future ship date.
+    : store.listUnprinted({ date, maxDate: date || todayIST() });
 
   if (!source.length) {
     log.ok(all ? "No labels found for today." : "No unprinted labels. Nothing to print.");

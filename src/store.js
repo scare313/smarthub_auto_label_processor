@@ -55,11 +55,16 @@ export const store = {
   },
 
   // Labelled-but-not-yet-printed shipments, optionally filtered.
-  listUnprinted({ date, channel } = {}) {
+  // `maxDate` (inclusive) excludes ship dates AFTER it. Printing passes today,
+  // so a batch always covers today plus any earlier day that was missed, but
+  // never orders pre-processed for a FUTURE day — those would otherwise land in
+  // the same PDF and could be handed to today's courier by mistake.
+  listUnprinted({ date, channel, maxDate } = {}) {
     const s = read();
     return Object.entries(s.processed)
       .filter(([, r]) => r.status === "LABELED" && !r.printed)
       .filter(([, r]) => (date ? r.date === date : true))
+      .filter(([, r]) => (maxDate ? String(r.date) <= maxDate : true))
       .filter(([, r]) => (channel ? r.channel === channel : true))
       .map(([customerShipmentId, r]) => ({ customerShipmentId, ...r }));
   },
