@@ -7,6 +7,13 @@ a logged-in Playwright browser session.
 > **Setting up on a new/formatted PC?** Follow
 > **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** — a complete step-by-step guide
 > from a blank Windows install (no prior knowledge assumed).
+>
+> **Something broken?** → **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**
+> — every problem we've hit, symptom → cause → fix.
+>
+> **Need to change or fix the code?** →
+> **[docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md)** — how it's built, where
+> each thing lives, and the traps to avoid.
 
 ## How it works
 
