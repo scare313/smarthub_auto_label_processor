@@ -26,6 +26,7 @@ import { getRecentLogs, log } from "./src/log.js";
 import { todayIST, LABELS_DIR, DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS } from "./src/config.js";
 import { listPeers, sharedSecret, isHub, selfName } from "./src/peers.js";
 import { checkHeartbeat } from "./src/heartbeat.js";
+import { VERSION, versionLine } from "./src/version.js";
 import { mergePdfBuffers, mergePickRows } from "./src/merge.js";
 import { writeRowsToXlsx } from "./src/picklist.js";
 import { store } from "./src/store.js";
@@ -63,10 +64,11 @@ async function checkPeerHealth() {
         summary: s.lastSummary || null,
         sessionAlive: s.sessionAlive ?? null,
         lastCycleAt: s.lastCycleAt ?? null, // so the hub can spot a stalled peer
+        version: s.version?.id ?? null,      // so a machine left on old code is visible
         checkedAt: new Date().toISOString(),
       };
     } catch {
-      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, lastCycleAt: null, checkedAt: new Date().toISOString() };
+      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, lastCycleAt: null, version: null, checkedAt: new Date().toISOString() };
     } finally {
       clearTimeout(timer);
     }
@@ -122,6 +124,7 @@ app.get("/api/status", (req, res) => {
   } catch {}
 
   res.json({
+    version: VERSION,
     host: os.hostname(),
     name: selfName() || os.hostname(),
     date: todayIST(),
@@ -673,6 +676,7 @@ app.post("/api/login", (req, res) => {
 });
 
 app.listen(PORT, () => {
+  log.info(`Version ${versionLine()}`);
   log.ok(`SmartHub control server listening on http://0.0.0.0:${PORT}  (open via this machine's Tailscale IP)`);
 
   // Set AGENT_NO_SCHEDULE=1 to start the server WITHOUT the internal 15-min

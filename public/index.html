@@ -45,6 +45,11 @@
                       padding: 0.35rem 0.7rem; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
   .attnpanel button.ghost { margin-top: 0.5rem; }
 
+  /* Amber, not red: the machines still process orders on their own - it is the
+     combined print that can misbehave. Worth fixing today, not this second. */
+  .verwarn { background: #f39c1218; border: 1px solid #f39c1266; color: #f39c12;
+             border-radius: 10px; padding: 0.6rem 0.9rem; font-size: 0.82rem; margin-bottom: 1rem; }
+
   .herorow { display: flex; gap: 10px; align-items: stretch; margin-bottom: 0.75rem; }
   .herorow .hero { flex: 1; margin-bottom: 0; }
   .squarebtn { flex: 0 0 88px; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -100,6 +105,7 @@
   <div class="sub" id="hostinfo">loading…</div>
 
   <div class="statusbar" id="status">Loading status…</div>
+  <div class="verwarn" id="ver-warn" hidden></div>
   <div class="banner" id="banner"></div>
 
   <div class="loginalert" id="login-alert">
@@ -319,7 +325,24 @@ async function refreshStatus() {
       machinesHtml +
       `<span>Queue: ${queueText}</span>` +
       (j.lastCycleAt ? `<span>Last cycle: ${new Date(j.lastCycleAt).toLocaleTimeString()}</span>` : "<span>Last cycle: none yet</span>");
-    $("hostinfo").textContent = `${selfLabel} · ${j.date} · auto-processing every 15 min`;
+    // Version, and whether every machine agrees on it. Hub and peers share the
+    // combined-print and print-confirm protocols, so one machine left on older
+    // code breaks printing in a way that looks like a network fault.
+    const myVer = (j.version && j.version.id) || "unknown";
+    const peerVers = peers.filter((p) => p.online && p.version).map((p) => ({ name: p.name, v: p.version }));
+    const mismatched = peerVers.filter((p) => p.v !== myVer);
+    $("hostinfo").textContent = `${selfLabel} · ${j.date} · auto-processing every 15 min · ${myVer}`;
+
+    const vw = $("ver-warn");
+    if (mismatched.length) {
+      vw.textContent =
+        `Version mismatch — this machine is on ${myVer}, ` +
+        mismatched.map((p) => `${p.name} is on ${p.v}`).join(", ") +
+        ". Combined printing can misbehave until both are updated and restarted.";
+      vw.hidden = false;
+    } else {
+      vw.hidden = true;
+    }
 
     // Logged-out warning — impossible to miss, because while a session is dead
     // that machine processes NOTHING. Covers this machine and any peer.
