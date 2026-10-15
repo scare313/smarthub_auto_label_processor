@@ -27,22 +27,23 @@
   /* Needs attention: orders the agent has given up retrying on its own. Amber,
      not red — nothing is broken, but these parcels will not ship until someone
      acts, so the panel only exists when there is something in it. */
-  /* Shown only for orders past the attempt threshold. They are STILL being
-     retried every cycle - this is information, never a thing to action. */
-  .attnbtn { width: 100%; background: #e74c3c; color: #fff; border: none; border-radius: 10px;
-             padding: 0.75rem 1rem; font-size: 0.95rem; font-weight: 700; cursor: pointer;
-             margin-bottom: 1rem; text-align: left; }
-  .attnbtn:active { transform: scale(0.995); }
-  .attnpanel { background: #e74c3c18; border: 1px solid #e74c3c66; border-radius: 10px;
-               padding: 0.6rem 0.9rem; margin: -0.5rem 0 1rem; }
+  /* Deliberately quiet. These orders are retried every cycle on their own and
+     need nothing from anyone, so this is a note, not an alarm. Red is reserved
+     for the things that actually stop work: an expired session, a dead peer. */
+  .attnline { background: none; border: none; color: #999; font-size: 0.8rem;
+              padding: 0 0 0.2rem; margin: -1rem 0 1.2rem; cursor: pointer;
+              text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+  .attnline:hover { color: #bbb; }
+  .attnpanel { background: #8881; border: 1px solid #8883; border-radius: 10px;
+               padding: 0.6rem 0.9rem; margin: -0.6rem 0 1.4rem; }
   .exc { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
          padding: 0.45rem 0; border-top: 1px solid #8882; font-size: 0.82rem; }
   .exc:first-child { border-top: none; }
   .exc .meta { color: #999; font-size: 0.76rem; }
-  .exc .reason { color: #e74c3c; word-break: break-word; }
-  .attnpanel button { background: #e74c3c; color: #fff; border: none; border-radius: 8px;
-                      padding: 0.4rem 0.8rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
-  .attnpanel button.ghost { background: transparent; border: 1px solid #e74c3c88; color: #e74c3c; margin-top: 0.5rem; }
+  .exc .reason { color: #b0905a; word-break: break-word; }
+  .attnpanel button { background: #6663; color: inherit; border: 1px solid #8883; border-radius: 8px;
+                      padding: 0.35rem 0.7rem; font-size: 0.78rem; cursor: pointer; white-space: nowrap; }
+  .attnpanel button.ghost { margin-top: 0.5rem; }
 
   .herorow { display: flex; gap: 10px; align-items: stretch; margin-bottom: 0.75rem; }
   .herorow .hero { flex: 1; margin-bottom: 0; }
@@ -118,14 +119,6 @@
     </div>
   </div>
 
-  <button class="attnbtn" id="attention" hidden aria-expanded="false">
-    <span id="attention-title">Needs attention</span>
-  </button>
-  <div class="attnpanel" id="attention-panel" hidden>
-    <div id="attention-list"></div>
-    <button class="ghost" id="btn-retry-all">Retry all</button>
-  </div>
-
   <div class="herorow">
     <button class="hero" id="btn-hero">
       <span id="hero-label">Print New Labels</span>
@@ -153,6 +146,14 @@
   </div>
   <div id="dash-wrap">
     <div class="dash-empty">Loading…</div>
+  </div>
+
+  <button class="attnline" id="attention" hidden aria-expanded="false">
+    <span id="attention-title"></span>
+  </button>
+  <div class="attnpanel" id="attention-panel" hidden>
+    <div id="attention-list"></div>
+    <button class="ghost" id="btn-retry-all">Reset counters</button>
   </div>
 
   <details class="advanced">
@@ -403,7 +404,7 @@ async function refreshExceptions() {
     }
 
     $("attention-title").textContent =
-      `⚠ ${ordered.length} order${ordered.length === 1 ? "" : "s"} failing — still retrying`;
+      `${ordered.length} order${ordered.length === 1 ? "" : "s"} failing on earlier days — still retrying`;
     $("attention").hidden = false;
 
     $("attention-list").innerHTML = ordered
