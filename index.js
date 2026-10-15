@@ -243,20 +243,21 @@ function cmdExceptions() {
     process.exitCode = 2;
     return;
   }
-  // Parked first: those are the ones that have actually stopped and need a
-  // decision. Everything else is still being retried on its own.
+  // Repeatedly-failing first: those are the ones worth a human look. Every one
+  // of them is still retried automatically every cycle - this listing is
+  // information, not a queue of things waiting on you.
   const all = store.listFailures({});
-  const rows = [...all.filter((f) => f.parked), ...all.filter((f) => !f.parked)];
-  const { failing, parked } = store.failureCounts();
+  const rows = [...all.filter((f) => f.flagged), ...all.filter((f) => !f.flagged)];
+  const { failing, flagged } = store.failureCounts();
   if (!rows.length) {
     log.ok("No orders are failing. Nothing needs attention.");
     return;
   }
-  log.info(`${failing} order(s) failing, ${parked} parked (cap ${MAX_ORDER_ATTEMPTS} non-transient attempts).`);
+  log.info(`${failing} order(s) failing, ${flagged} past ${MAX_ORDER_ATTEMPTS} attempts. All are still retried every cycle.`);
   log.raw("");
   log.raw("STATE     ORDER                 CHANNEL    SHIP        TRIES  REASON");
   for (const f of rows) {
-    const state = f.parked ? "PARKED " : f.transient ? "waiting" : "retry  ";
+    const state = f.flagged ? "FAILING" : f.transient ? "waiting" : "retry  ";
     const tries = `${f.hardAttempts || 0}/${MAX_ORDER_ATTEMPTS}`;
     log.raw(
       `${state}   ${String(f.orderId || "-").padEnd(21)} ${String(f.channel || "-").padEnd(10)} ` +
@@ -386,7 +387,7 @@ Usage:
   node index.js picklist [--channel ...] [--date ...]  SKU pick manifest (.xlsx)
   node index.js status                                 Show local processing summary
   node index.js exceptions                             Orders that keep failing, and why
-  node index.js retry --order <csid> | --all           Retry a failed/parked order on the next cycle
+  node index.js retry --order <csid> | --all           Clear a failure record (resets its counter)
   node index.js test-alert                             Send a test email (verify alerts)
 
 Configured channels: ${Object.keys(CHANNELS).join(", ")}

@@ -116,7 +116,7 @@ app.get("/api/status", (req, res) => {
     health = { ok: false, reason: e.message };
   }
 
-  let exceptions = { failing: 0, parked: 0 };
+  let exceptions = { failing: 0, flagged: 0 };
   try {
     exceptions = store.failureCounts();
   } catch {}
@@ -143,7 +143,7 @@ app.get("/api/exceptions", (req, res) => {
   try {
     res.json({
       counts: store.failureCounts(),
-      failures: store.listFailures({ parkedOnly: req.query.parked === "1" }),
+      failures: store.listFailures({ flaggedOnly: req.query.flagged === "1" }),
       maxAttempts: MAX_ORDER_ATTEMPTS,
     });
   } catch (e) {

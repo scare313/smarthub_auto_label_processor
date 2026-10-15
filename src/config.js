@@ -123,16 +123,26 @@ export const SHIP_LABEL_RESOLUTION = 300;
 // sooner is worth more than the queries it costs.
 export const LOOKBACK_DAYS = 2;
 
-// Hard per-order failures allowed before an order is PARKED: taken out of the
-// retry loop and surfaced for manual attention.
+// Hard per-order failures after which an order is FLAGGED on the control page.
+// It is a DISPLAY threshold only. Retrying never stops and never waits for a
+// human: a flagged order is retried every cycle, exactly like any other.
 //
-// WHY: there was no cap at all. A failing order was retried every 15 minutes
-// forever — one reached 96 attempts, and 867 doomed attempts were logged on one
-// account in nine days. SmartHub eventually hard-blocks such an order with
-// "FORBIDDEN_REQUEST: Maximum number of retry reached", which no amount of
-// further retrying can undo, so the retrying itself is what breaks the order.
-// 5 is deliberately generous, and only HARD failures count (see below), so a
-// network blip or a not-yet-ready label never pushes an order toward parking.
+// An earlier version used this as a cap, parking an order after 5 failures
+// until someone pressed Retry. That rested on the belief that retrying itself
+// got orders permanently hard-blocked. The audit disproves it. On one order:
+//
+//   attempts  1-10  LABEL_NOT_READY
+//   attempts 11-15  FORBIDDEN_REQUEST ("maximum number of retry reached")
+//   attempt     16  LABEL_NOT_READY   <- cleared on its own
+//
+// FORBIDDEN_REQUEST is temporary throttling that lifts by itself, not a
+// permanent block. Those orders never shipped because LABEL_NOT_READY never
+// resolved marketplace-side, not because of anything we did. With no permanent
+// penalty for retrying, stopping bought nothing and only traded an automatic
+// recovery for a manual click, so the tool keeps trying.
+//
+// Only HARD failures count toward this (see below), so a network blip or a
+// not-yet-ready label never pushes an order onto the page.
 export const MAX_ORDER_ATTEMPTS = 5;
 
 // Error text meaning "try again later" rather than "this order is broken".

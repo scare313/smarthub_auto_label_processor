@@ -4,7 +4,7 @@
 // Shape:
 // {
 //   processed: { "<customerShipmentId>": { orderId, channel, date, status, labelFile, trackingId, ts } },
-//   failures:  { "<customerShipmentId>": { orderId, channel, date, reason, attempts, hardAttempts, parked, firstAt, lastAt } },
+//   failures:  { "<customerShipmentId>": { orderId, channel, date, reason, attempts, hardAttempts, flagged, firstAt, lastAt } },
 //   audit:     [ { ts, channel, action, detail } ],
 //   lastPrint: { files, ts },
 //   backupDay: "YYYY-MM-DD"
@@ -238,7 +238,7 @@ export const store = {
     };
     // Success clears any failure history in the SAME atomic write, so an order
     // that finally goes through disappears from the exceptions panel by itself
-    // and can never sit there "parked" while already labelled.
+    // and can never sit there flagged while already labelled.
     delete s.failures[customerShipmentId];
     write(s);
   },
@@ -305,13 +305,13 @@ export const store = {
   // A label that simply is not ready yet, or a 503, must not burn the budget;
   // otherwise a slow morning would park orders that were going to succeed.
   //
-  // Returns { attempts, hardAttempts, parked, newlyParked }.
+  // Returns { attempts, hardAttempts, flagged, newlyFlagged }.
   recordFailure(customerShipmentId, { orderId, channel, date, reason, transient = false } = {}) {
     const s = read();
     const prev = s.failures[customerShipmentId] || {
       attempts: 0,
       hardAttempts: 0,
-      parked: false,
+      flagged: false,
       firstAt: new Date().toISOString(),
     };
     const rec = {
@@ -325,15 +325,17 @@ export const store = {
       hardAttempts: prev.hardAttempts + (transient ? 0 : 1),
       lastAt: new Date().toISOString(),
     };
-    const wasParked = !!prev.parked;
-    rec.parked = rec.hardAttempts >= MAX_ORDER_ATTEMPTS;
+    const wasFlagged = !!prev.flagged;
+    // FLAGGED means "shown on the page", never "stopped". The order is still
+    // retried every cycle; this only decides whether a human is told about it.
+    rec.flagged = rec.hardAttempts >= MAX_ORDER_ATTEMPTS;
     s.failures[customerShipmentId] = rec;
     write(s);
     return {
       attempts: rec.attempts,
       hardAttempts: rec.hardAttempts,
-      parked: rec.parked,
-      newlyParked: rec.parked && !wasParked,
+      flagged: rec.flagged,
+      newlyFlagged: rec.flagged && !wasFlagged,
     };
   },
 
@@ -341,18 +343,18 @@ export const store = {
   // order against this, so it must be ONE read of the state file, not one per
   // order — a 300-order day would otherwise re-read and re-parse the file 300
   // times inside a single loop.
-  parkedIds() {
+  flaggedIds() {
     const s = read();
     const out = new Set();
-    for (const [id, r] of Object.entries(s.failures)) if (r.parked) out.add(id);
+    for (const [id, r] of Object.entries(s.failures)) if (r.flagged) out.add(id);
     return out;
   },
 
   // Everything the exceptions panel needs, newest trouble first.
-  listFailures({ parkedOnly = false, channel, date } = {}) {
+  listFailures({ flaggedOnly = false, channel, date } = {}) {
     const s = read();
     return Object.entries(s.failures)
-      .filter(([, r]) => (parkedOnly ? r.parked : true))
+      .filter(([, r]) => (flaggedOnly ? r.flagged : true))
       .filter(([, r]) => (channel ? r.channel === channel : true))
       .filter(([, r]) => (date ? r.date === date : true))
       .map(([customerShipmentId, r]) => ({ customerShipmentId, ...r }))
@@ -362,12 +364,12 @@ export const store = {
   failureCounts() {
     const s = read();
     let failing = 0;
-    let parked = 0;
+    let flagged = 0;
     for (const r of Object.values(s.failures)) {
       failing++;
-      if (r.parked) parked++;
+      if (r.flagged) flagged++;
     }
-    return { failing, parked };
+    return { failing, flagged };
   },
 
   // Operator pressed Retry. Deleting the record (rather than zeroing the

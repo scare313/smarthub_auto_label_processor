@@ -42,13 +42,14 @@ function noteFailure(channelKey, date, shipment, reason, { transient = false } =
     log.err(`[${channelKey}] ${shipment.orderId} [${csid}] ${short} (not recorded: ${e.message})`);
     return null;
   }
-  const budget = transient ? "" : ` (attempt ${r.hardAttempts}/${MAX_ORDER_ATTEMPTS})`;
+  const budget = transient ? "" : ` (failed attempt ${r.hardAttempts})`;
   log.warn(`[${channelKey}] ${shipment.orderId} [${csid}] ${short}${budget}`);
-  if (r.newlyParked) {
+  if (r.newlyFlagged) {
     log.err(
-      `[${channelKey}] ${shipment.orderId} [${csid}] PARKED after ${r.hardAttempts} failed attempts — it will be skipped until you press Retry. Reason: ${short}`
+      `[${channelKey}] ${shipment.orderId} [${csid}] has now failed ${r.hardAttempts} times and is shown on the control page. ` +
+        `It is STILL being retried every cycle. Reason: ${short}`
     );
-    store.audit(channelKey, "parked", `${shipment.orderId} [${csid}] after ${r.hardAttempts}: ${short}`);
+    store.audit(channelKey, "failing", `${shipment.orderId} [${csid}] after ${r.hardAttempts}: ${short}`);
   }
   return r;
 }
@@ -294,13 +295,18 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
     unique.push(s);
   }
 
-  // Parked orders (item 2): repeatedly failed on a non-transient error, so the
-  // agent stops burning a slot on them every cycle and waits for a human. ONE
-  // store read for the whole channel, not one per order.
-  const parked = store.parkedIds();
+  // Orders that keep failing are FLAGGED for visibility but never skipped: the
+  // agent retries them every cycle, forever, with no human step. An earlier
+  // design parked them after N failures on the belief that retrying itself got
+  // orders hard-blocked. The audit disproves that - FORBIDDEN_REQUEST
+  // ("maximum number of retry reached") appeared at attempt 11, lasted five
+  // attempts and then cleared back to the original error on its own. It is
+  // temporary throttling, not a permanent block, so there is nothing to protect
+  // an order from and stopping only traded an automatic recovery for a click.
+  const flagged = store.flaggedIds();
 
   let todo = [];
-  const skippedParked = [];
+  const stillFailing = [];
   for (const s of unique) {
     // SmartHub status is the SOURCE OF TRUTH for idempotency: only BOUND
     // shipments still need packing. A packed/labelled order moves out of BOUND,
@@ -309,18 +315,15 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
     // failure that returns OK but doesn't persist), and must never block an order
     // that SmartHub still shows as unpacked.
     if (!PACKABLE.has(s.shipmentStatus)) continue;
-    if (parked.has(s.customerShipmentId)) {
-      skippedParked.push(s);
-      continue;
-    }
+    if (flagged.has(s.customerShipmentId)) stillFailing.push(s); // noted, NOT skipped
     todo.push(s);
   }
 
-  if (skippedParked.length) {
+  if (stillFailing.length) {
     log.warn(
-      `[${channel.key}] Skipping ${skippedParked.length} parked order(s) that failed ${MAX_ORDER_ATTEMPTS}+ times: ` +
-        skippedParked.map((s) => s.orderId).join(", ") +
-        " — open Needs attention on the control page to retry or handle them in SmartHub."
+      `[${channel.key}] ${stillFailing.length} order(s) have failed ${MAX_ORDER_ATTEMPTS}+ times and are STILL being retried: ` +
+        stillFailing.map((s) => s.orderId).join(", ") +
+        " — they may need fixing in SmartHub, but the agent keeps trying either way."
     );
   }
 
@@ -342,12 +345,12 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
   if (dryRun) {
     log.ok(`[${channel.key}] DRY-RUN complete. Would pack+label ${todo.length} shipment(s). No changes made.`);
     store.audit(channel.key, "dry-run", `would process ${todo.length}`);
-    return { channel: channel.key, shipments: unique.length, processed: 0, dryRun: true, date, parked: skippedParked.length };
+    return { channel: channel.key, shipments: unique.length, processed: 0, dryRun: true, date, stillFailing: stillFailing.length };
   }
 
   if (!todo.length) {
     log.ok(`[${channel.key}] Nothing to process.`);
-    return { channel: channel.key, shipments: unique.length, processed: 0, date, parked: skippedParked.length };
+    return { channel: channel.key, shipments: unique.length, processed: 0, date, stillFailing: stillFailing.length };
   }
 
   // 3. LIVE — irreversible from here. Process in BATCHES so large channels (e.g.
@@ -393,6 +396,6 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
     processed: labeledCount,
     failed: failedCount,
     date,
-    parked: skippedParked.length,
+    stillFailing: stillFailing.length,
   };
 }

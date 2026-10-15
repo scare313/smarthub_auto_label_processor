@@ -16,24 +16,24 @@ import { getClient, checkSession } from "./agent.js";
 // Email about a degraded store once per outage, not once per cycle.
 let degradedNotified = false;
 
-// Orders that have been announced as parked, so the operator is emailed once per
-// order and not every 15 minutes. An id that stops being parked (retried, or
-// finally labelled) is dropped, so if it parks again it is announced again.
-const announcedParked = new Set();
+// Orders already announced, so the operator is emailed once per order and not
+// every 15 minutes. An id that stops failing (recovered, or finally labelled) is
+// dropped, so if it starts failing again it is announced again.
+const announced = new Set();
 
-async function notifyNewlyParked() {
-  let parked;
+async function notifyNewlyFlagged() {
+  let flagged;
   try {
-    parked = store.listFailures({ parkedOnly: true });
+    flagged = store.listFailures({ flaggedOnly: true });
   } catch {
     return;
   }
-  const ids = new Set(parked.map((p) => p.customerShipmentId));
-  for (const id of [...announcedParked]) if (!ids.has(id)) announcedParked.delete(id);
+  const ids = new Set(flagged.map((p) => p.customerShipmentId));
+  for (const id of [...announced]) if (!ids.has(id)) announced.delete(id);
 
-  const fresh = parked.filter((p) => !announcedParked.has(p.customerShipmentId));
+  const fresh = flagged.filter((p) => !announced.has(p.customerShipmentId));
   if (!fresh.length) return;
-  for (const p of fresh) announcedParked.add(p.customerShipmentId);
+  for (const p of fresh) announced.add(p.customerShipmentId);
 
   const lines = fresh.map(
     (p) => `  ${p.orderId || "(no order id)"} [${p.customerShipmentId}]  ${p.channel}  ship ${p.date}\n    ${p.reason}`
@@ -41,14 +41,14 @@ async function notifyNewlyParked() {
   await sendEmail(
     `SmartHub: ${fresh.length} order(s) need attention`,
     [
-      `${fresh.length} order(s) failed repeatedly and have been parked. The agent will NOT retry them until you say so.`,
+      `${fresh.length} order(s) have failed repeatedly. The agent IS STILL RETRYING them every 15 minutes - nothing is waiting on you.`,
       "",
       ...lines,
       "",
-      "Open the control page and use 'Needs attention' to retry, or handle the order directly in SmartHub.",
-      `A parked order is skipped, so nothing else is held up — but these parcels will not ship until someone acts.`,
+      "They may need fixing in SmartHub (a bad address, a marketplace-side problem), but the agent keeps trying either way.",
+      "This is for your information - no action is required for retrying to continue.",
     ].join("\n")
-  ).catch((e) => log.warn(`Could not email the parked-order notice: ${e.message}`));
+  ).catch((e) => log.warn(`Could not email the failing-order notice: ${e.message}`));
 }
 
 export async function runCycle({ date } = {}) {
@@ -150,7 +150,7 @@ export async function runCycle({ date } = {}) {
     if (expired) break;
   }
 
-  await notifyNewlyParked();
+  await notifyNewlyFlagged();
 
   // Daily safety copy of state.json. Cheap, idempotent (once per IST day) and
   // skipped while degraded, so a bad state can never overwrite a good backup.
