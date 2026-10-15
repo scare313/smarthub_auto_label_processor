@@ -103,7 +103,11 @@ export class SmartHubClient {
       throw new SessionExpiredError(`${where}: got HTML instead of JSON (redirected to login — run \`login\`)`);
     }
     if (r.status < 200 || r.status >= 300) {
-      throw new Error(`${where}: HTTP ${r.status}`);
+      // Include the body. SmartHub explains most 4xx responses in it, and
+      // discarding it turned "createPickList: HTTP 400" into a guessing game
+      // while 13 orders sat unshipped.
+      const detail = String(r.text || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(`${where}: HTTP ${r.status}${detail ? ` — ${detail}` : ""}`);
     }
   }
 
@@ -278,7 +282,10 @@ export class SmartHubClient {
   }
 
   // Create (activate) a pick list. Returns the new pick task id (a bare string).
-  async createPickList({ expectedShipEpoch, numberOfOrders, salesChannel, isSelfShip = false }) {
+  // `onlyRecommendedSlots` must be FALSE for a MISSED list: its pickup window has
+  // already passed, so by definition none of its orders are in a recommended
+  // slot and asking for only those selects nothing.
+  async createPickList({ expectedShipEpoch, numberOfOrders, salesChannel, isSelfShip = false, onlyRecommendedSlots = true }) {
     return this._postJson(
       "/api/pick/list",
       {
@@ -290,7 +297,7 @@ export class SmartHubClient {
         isSerialNumRequired: null,
         batchSize: numberOfOrders,
         salesChannelFilterList: [{ salesChannel, isSelfShip }],
-        includeOnlyInRecommendedSlots: true,
+        includeOnlyInRecommendedSlots: onlyRecommendedSlots,
         isReturnAuthenticityTagRequired: null,
       },
       "createPickList"

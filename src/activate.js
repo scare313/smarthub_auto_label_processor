@@ -36,7 +36,7 @@ export async function activateChannel(client, { channel, dryRun }) {
   let missed = [];
   try {
     const missedCards = (await client.getMissedLists()) || [];
-    missed = missedCards.filter(mineFor(channel));
+    missed = missedCards.filter(mineFor(channel)).map((c) => ({ ...c, _missed: true }));
     if (missed.length) {
       const n = missed.reduce((a, c) => a + (c.numberOfOrders || 0), 0);
       log.warn(`[${channel.key}] ${n} MISSED order(s) past their ship date, in ${missed.length} pick list(s) — activating.`);
@@ -73,15 +73,25 @@ export async function activateChannel(client, { channel, dryRun }) {
   // 3. Activate each.
   const created = [];
   for (const c of mine) {
-    const id = await client.createPickList({
-      expectedShipEpoch: c.expectedShipEpoch,
-      numberOfOrders: c.numberOfOrders,
-      salesChannel: channel.salesChannel,
-      isSelfShip: c.displayableSalesChannel?.isSelfShip || false,
-    });
-    log.ok(`[${channel.key}] Activated pick list ${id} (${c.numberOfOrders} orders).`);
-    store.audit(channel.key, "activated", `${id} orders=${c.numberOfOrders} ExSD=${c.expectedShipEpoch}`);
-    created.push(id);
+    try {
+      const id = await client.createPickList({
+        expectedShipEpoch: c.expectedShipEpoch,
+        numberOfOrders: c.numberOfOrders,
+        salesChannel: channel.salesChannel,
+        isSelfShip: c.displayableSalesChannel?.isSelfShip || false,
+        // A missed list's pickup window has passed, so none of its orders are
+        // in a recommended slot any more.
+        onlyRecommendedSlots: !c._missed,
+      });
+      log.ok(`[${channel.key}] Activated ${c._missed ? "MISSED " : ""}pick list ${id} (${c.numberOfOrders} orders).`);
+      store.audit(channel.key, "activated", `${id} orders=${c.numberOfOrders} ExSD=${c.expectedShipEpoch}`);
+      created.push(id);
+    } catch (e) {
+      // One bad card must not stop the others - a missed list that SmartHub
+      // refuses should never block today's orders from being activated.
+      log.err(`[${channel.key}] could not activate ${c._missed ? "MISSED " : ""}list ExSD=${c.expectedShipEpoch} (${c.numberOfOrders} orders): ${e.message}`);
+      store.audit(channel.key, "activate-failed", `ExSD=${c.expectedShipEpoch} orders=${c.numberOfOrders}: ${e.message}`.slice(0, 200));
+    }
   }
   return { channel: channel.key, created };
 }
