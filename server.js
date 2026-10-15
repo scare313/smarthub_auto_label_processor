@@ -35,7 +35,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4545;
 
 const app = express();
-app.use(express.json());
+// Body parsing. The default 100kb is right for every route EXCEPT the peer
+// backup, which carries a whole state.json - already 3MB here and growing - and
+// was failing with PayloadTooLargeError on every exchange, silently leaving the
+// off-machine backup empty. That one path is parsed separately, and only AFTER
+// peerAuth, so an unauthenticated caller can never make us buffer megabytes.
+const BIG_BODY = "32mb";
+const bigBodyPaths = new Set(["/api/peer/backup"]);
+app.use((req, res, next) => {
+  if (bigBodyPaths.has(req.path)) return next(); // handled on the route itself
+  express.json()(req, res, next);
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 let lastCycleAt = null;
@@ -574,7 +584,7 @@ app.get("/api/peer/state", peerAuth, (req, res) => {
 
 // A peer hands us its state to keep. Stored under its own name so the two
 // machines' backups can never collide.
-app.post("/api/peer/backup", peerAuth, (req, res) => {
+app.post("/api/peer/backup", peerAuth, express.json({ limit: BIG_BODY }), (req, res) => {
   try {
     const name = safePeerName((req.body && req.body.name) || "peer");
     const date = String((req.body && req.body.date) || todayIST()).replace(/[^0-9-]/g, "");
