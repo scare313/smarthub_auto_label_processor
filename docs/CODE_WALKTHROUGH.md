@@ -149,7 +149,7 @@ export const DEFAULT_PACKAGE = {
   length: { measure: 15, unitOfMeasure: "CM" },
   width:  { measure: 15, unitOfMeasure: "CM" },
   height: { measure: 2,  unitOfMeasure: "CM" },
-  weight: { measure: 100, unitOfMeasure: "G" },   // ← the Meesho failure lives here
+  weight: { measure: 100, unitOfMeasure: "G" },   // verified accepted — see note below
 };
 ```
 
@@ -509,8 +509,15 @@ SmartHubClient.launch({ visible: true })
 
 **When an API call starts failing, capture a HAR.** Do the same action manually
 in SmartHub with DevTools → Network recording, then diff the request payload
-against ours. This has solved every API-side failure so far — including one where
-the *only* difference was `100 G` vs `0.2 KG`.
+against ours. This solved the Amazon `pickupSlotId` bug and found the missed
+pick-list endpoint.
+
+**But a payload diff is a hypothesis, not a cause.** A HAR once showed `100 G`
+vs `0.2 KG` as the only difference on a failing Meesho order, and that was
+written up as the root cause. It was wrong: the same SKU packs fine with `100 G`
+15 times over. Before acting on a diff, check whether the current payload
+already succeeds elsewhere — if it does, the difference is a coincidence and the
+real variable is in the order, not the request.
 
 ---
 

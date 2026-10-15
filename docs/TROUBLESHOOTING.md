@@ -114,21 +114,33 @@ repeatedly — we have seen the same order fail 96 times.
 | Fails once, succeeds next cycle | Transient hiccup | Ignore — it self-heals |
 | Fails every cycle, never succeeds | Real rejection | Needs a fix (below) |
 
-**Known cause (Meesho, from 24 Aug 2026):** the fixed package weight. We send
-`{ measure: 100, unitOfMeasure: "G" }`; SmartHub's own UI sends
-`{ measure: 0.2, unitOfMeasure: "KG" }`. A HAR capture of a successful manual
-pack showed that to be the **only** difference — every other field byte-identical.
+**Cause: a per-order courier constraint, not anything in our request.** The
+marketplace could not assign a courier for that particular shipment — commonly
+the destination, the route, or courier capacity. It is normal on Meesho and
+carries no penalty. The order is scheduled, the label just cannot be produced yet.
 
-**To fix:** edit `DEFAULT_PACKAGE.weight` in `src/config.js`, then test on a
-single order before rolling out:
+**Most clear on their own.** Across one account's history, 55 of 66 failing
+orders recovered, every one of them within 2 attempts. The agent retries every
+15 minutes forever, so these need nothing from you.
 
-```bash
-node index.js run --channel meesho --live --limit 1
-```
+> **⚠️ A wrong theory to not repeat.** This was once documented here as being
+> caused by the fixed package weight — we send `100 G`, SmartHub's UI sends
+> `0.2 KG`, and a HAR of a successful manual pack showed that as the only
+> difference. **That was wrong.** `CAP-BASEBALL-PLAIN-WHITE`, the exact SKU from
+> that HAR, has packed successfully **15 times** with the unchanged `100 G`
+> payload, including after the failures began. An identical request succeeds and
+> fails for different orders, so the weight cannot be the variable — the manual
+> pack simply happened after the constraint had cleared.
+>
+> **Do not change `DEFAULT_PACKAGE.weight` to chase this.** Before blaming a
+> payload field, check whether the same SKU already succeeds with it:
+>
+> ```bash
+> node -e "const s=require('./data/state.json');const t='YOUR-SKU';const n=Object.values(s.processed).filter(r=>(r.lineItems||[]).some(l=>l.msku===t)).length;console.log(t,'packed ok',n,'times')"
+> ```
 
-Try `{ measure: 0.1, unitOfMeasure: "KG" }` first — same physical weight, so no
-change to shipping cost. Only move to `0.2` if `0.1` is rejected, since a heavier
-declared weight can cost more per parcel.
+**If an order never clears**, it needs handling in SmartHub — but the agent keeps
+retrying it either way, so nothing is blocked and nothing waits on you.
 
 **To list every currently stuck order:**
 
