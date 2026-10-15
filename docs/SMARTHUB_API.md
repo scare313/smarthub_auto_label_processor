@@ -390,6 +390,28 @@
 ]
 ```
 
+#### `POST /api/pick/list` — the `includeOnlyInRecommendedSlots` field
+
+Creates (activates) a pick list. The UI's equivalent is the GraphQL mutation
+`CreatePickTask`, which carries the same fields nested under `filterCriteria`.
+
+⚠️ **Send `includeOnlyInRecommendedSlots: false`.** Captured from a manual
+activation of a same-day order (`flipkart_picked.har`):
+
+```json
+{ "salesChannelFilterList": [{ "salesChannel": "FKSTANDARD", "isSelfShip": false }],
+  "batchSize": 1, "startExSD": 1792045800, "endExSD": 1792045800,
+  "filterCriteria": { "isGift": null, "isSerialNumRequired": null,
+                      "isFastTrack": null, "isReturnAuthenticityTagRequired": null,
+                      "isSingle": null, "includeOnlyInRecommendedSlots": false } }
+```
+
+Sending `true` silently excludes every order not in a currently recommended
+slot: all of a **missed** list (its window has passed, so none qualify) and some
+same-day orders too. Those are never activated, picked or shipped, and leave no
+local trace, because an order that is never activated is never recorded. This
+one field cost 13 Flipkart orders on 13 Oct 2026 and another on the 15th.
+
 #### `GET /api/pick/lists/missed`
 - Source: `1amazon_easy_ship_missed.har` · status 200
 - **Used by `src/activate.js`.** Orders whose pickup window has already passed

@@ -282,10 +282,20 @@ export class SmartHubClient {
   }
 
   // Create (activate) a pick list. Returns the new pick task id (a bare string).
-  // `onlyRecommendedSlots` must be FALSE for a MISSED list: its pickup window has
-  // already passed, so by definition none of its orders are in a recommended
-  // slot and asking for only those selects nothing.
-  async createPickList({ expectedShipEpoch, numberOfOrders, salesChannel, isSelfShip = false, onlyRecommendedSlots = true }) {
+  // `onlyRecommendedSlots` defaults to FALSE because that is what SmartHub's own
+  // UI sends - verified from a HAR of a manual activation of a same-day order:
+  //
+  //   mutation CreatePickTask { ... filterCriteria: {
+  //       includeOnlyInRecommendedSlots: false } }
+  //
+  // We sent true, which silently excluded any order not in a currently
+  // recommended slot. That is both every order on a MISSED list (its pickup
+  // window has passed, so none of them are) and, as the HAR shows, some of
+  // today's orders too - they were never activated, never picked, never
+  // shipped, and left no local trace because an unactivated order writes
+  // nothing. This single field is why 13 Flipkart orders were lost on
+  // 13 October and why one more went missing on the 15th.
+  async createPickList({ expectedShipEpoch, numberOfOrders, salesChannel, isSelfShip = false, onlyRecommendedSlots = false }) {
     return this._postJson(
       "/api/pick/list",
       {

@@ -79,9 +79,6 @@ export async function activateChannel(client, { channel, dryRun }) {
         numberOfOrders: c.numberOfOrders,
         salesChannel: channel.salesChannel,
         isSelfShip: c.displayableSalesChannel?.isSelfShip || false,
-        // A missed list's pickup window has passed, so none of its orders are
-        // in a recommended slot any more.
-        onlyRecommendedSlots: !c._missed,
       });
       log.ok(`[${channel.key}] Activated ${c._missed ? "MISSED " : ""}pick list ${id} (${c.numberOfOrders} orders).`);
       store.audit(channel.key, "activated", `${id} orders=${c.numberOfOrders} ExSD=${c.expectedShipEpoch}`);
