@@ -19,15 +19,16 @@
 //   node index.js run --channel flipkart --date 2026-06-20         (dry-run)
 //   node index.js run --channel flipkart --date 2026-06-20 --live  (real)
 
-import { BASE_URL, CHANNELS, resolveChannel, todayIST } from "./src/config.js";
+import { BASE_URL, CHANNELS, resolveChannel, todayIST, MAX_ORDER_ATTEMPTS } from "./src/config.js";
 import { SmartHubClient, SessionExpiredError } from "./src/api.js";
 import { processChannel } from "./src/pipeline.js";
 import { dumpPicklist } from "./src/picklist.js";
 import { printNewLabels, reprintLast } from "./src/print.js";
 import { marketStatus } from "./src/status.js";
 import { activateChannel } from "./src/activate.js";
-import { raiseSessionAlert, clearSessionAlert } from "./src/alert.js";
 import { sendEmail, emailConfigured } from "./src/notify.js";
+import { runCycle } from "./src/scheduler.js";
+import { closeClient } from "./src/agent.js";
 import { store } from "./src/store.js";
 import { log } from "./src/log.js";
 
@@ -77,6 +78,15 @@ async function cmdRun(args) {
   const channels = channelKeys.map(resolveChannel);
 
   if (!dryRun) {
+    // A degraded store reads as empty, so every order would look unprocessed and
+    // get a second label. Refuse before touching anything. Dry-run is read-only,
+    // so it stays allowed — it is useful for seeing what the damage would be.
+    const health = store.health();
+    if (!health.ok) {
+      log.err(`LIVE run refused — ${health.reason}`);
+      log.err(health.hint);
+      process.exit(2);
+    }
     log.warn("LIVE MODE — this will pack orders and generate REAL ship labels (irreversible).");
   } else {
     log.info("DRY-RUN — read-only. No orders will be packed or labelled. Use --live to execute.");
@@ -166,41 +176,29 @@ async function cmdActivate(args) {
   }
 }
 
-// Unattended entrypoint for Windows Task Scheduler: activate today's pick lists,
-// then label all eligible orders, for every channel. Always LIVE. Raises a
-// session alert if the login has expired so an employee knows to re-login.
+// Unattended entrypoint for the legacy Windows Task Scheduler path: activate
+// today's pick lists, then label all eligible orders, for every channel. Always
+// LIVE. Raises a session alert if the login has expired so an employee knows to
+// re-login.
+//
+// This now delegates to the SAME runCycle() the web server's internal scheduler
+// uses, rather than keeping a second copy of the loop. The old copy had drifted:
+// it resolved the date once and had no look-back, no attempt cap and no
+// state-health check. One implementation means the .bat path and the server path
+// cannot disagree about what a cycle does.
 async function cmdAuto(args) {
-  const date = args.date || todayIST();
-  const channels = Object.keys(CHANNELS).map(resolveChannel);
-
-  log.info(`AUTO cycle — ${date} — channels: ${channels.map((c) => c.key).join(", ")}`);
-  const client = await SmartHubClient.launch({ headless: true });
+  const r = await runCycle(args.date ? { date: args.date } : {});
   try {
-    const alive = await client.checkSession();
-    if (!alive) {
-      await raiseSessionAlert("checkSession failed at start of auto cycle");
-      await client.close();
-      process.exit(2);
-    }
-    await clearSessionAlert(); // healthy
-
-    for (const ch of channels) {
-      try {
-        await activateChannel(client, { channel: ch, dryRun: false });
-        await processChannel(client, { channel: ch, date, dryRun: false, limit: Infinity });
-      } catch (e) {
-        if (e instanceof SessionExpiredError) {
-          await raiseSessionAlert(e.message);
-          store.audit(ch.key, "session-expired", e.message);
-          break;
-        }
-        log.err(`[${ch.key}] auto cycle error: ${e.message}`);
-        store.audit(ch.key, "auto-error", e.message);
-      }
+    if (!r.ok) {
+      log.err(`AUTO cycle stopped: ${r.reason}`);
+      // Exit 2 keeps the old contract with run-auto.bat / Task Scheduler, which
+      // treats a non-zero exit as "this run needs attention".
+      process.exitCode = 2;
+      return;
     }
     log.ok("AUTO cycle complete.");
   } finally {
-    await client.close();
+    await closeClient();
   }
 }
 
@@ -233,6 +231,64 @@ async function cmdPrint(args) {
 function cmdReprint() {
   // Pure local file reopen — no browser/session needed.
   reprintLast();
+}
+
+// Orders the agent has stopped retrying, and why. No browser needed — this just
+// reads the local store, so it works even when the session is dead.
+function cmdExceptions() {
+  const health = store.health();
+  if (!health.ok) {
+    log.err(`State file unreadable: ${health.reason}`);
+    log.err(health.hint);
+    process.exitCode = 2;
+    return;
+  }
+  // Parked first: those are the ones that have actually stopped and need a
+  // decision. Everything else is still being retried on its own.
+  const all = store.listFailures({});
+  const rows = [...all.filter((f) => f.parked), ...all.filter((f) => !f.parked)];
+  const { failing, parked } = store.failureCounts();
+  if (!rows.length) {
+    log.ok("No orders are failing. Nothing needs attention.");
+    return;
+  }
+  log.info(`${failing} order(s) failing, ${parked} parked (cap ${MAX_ORDER_ATTEMPTS} non-transient attempts).`);
+  log.raw("");
+  log.raw("STATE     ORDER                 CHANNEL    SHIP        TRIES  REASON");
+  for (const f of rows) {
+    const state = f.parked ? "PARKED " : f.transient ? "waiting" : "retry  ";
+    const tries = `${f.hardAttempts || 0}/${MAX_ORDER_ATTEMPTS}`;
+    log.raw(
+      `${state}   ${String(f.orderId || "-").padEnd(21)} ${String(f.channel || "-").padEnd(10)} ` +
+        `${String(f.date || "-").padEnd(11)} ${tries.padEnd(6)} ${String(f.reason || "").slice(0, 70)}`
+    );
+  }
+  log.raw("");
+  log.info("Clear one with:  node index.js retry --order <customerShipmentId>");
+  log.info("Clear them all:  node index.js retry --all");
+}
+
+// Clear failure history so the next cycle treats these orders as new.
+function cmdRetry(args) {
+  if (args.all) {
+    const n = store.unparkAll();
+    log.ok(n ? `${n} order(s) cleared. They will be retried on the next cycle.` : "Nothing to retry.");
+    store.audit("-", "retry-all", `${n} orders (cli)`);
+    return;
+  }
+  const id = args.order || args.csid;
+  if (typeof id !== "string" || !id) {
+    log.err("Pass --order <customerShipmentId>, or --all.");
+    process.exitCode = 1;
+    return;
+  }
+  if (!store.unpark(id)) {
+    log.err(`No failure record for ${id}. Run \`node index.js exceptions\` to see the ids.`);
+    process.exitCode = 1;
+    return;
+  }
+  log.ok(`${id} cleared. It will be retried on the next cycle.`);
+  store.audit("-", "retry", `${id} (cli)`);
 }
 
 async function cmdSummary(args) {
@@ -307,6 +363,10 @@ async function main() {
       return cmdActivate(args);
     case "auto":
       return cmdAuto(args);
+    case "exceptions":
+      return cmdExceptions();
+    case "retry":
+      return cmdRetry(args);
     case "test-alert":
       return cmdTestAlert();
     default:
@@ -325,6 +385,8 @@ Usage:
   node index.js reprint                                Reopen the last print PDF(s) (no re-processing)
   node index.js picklist [--channel ...] [--date ...]  SKU pick manifest (.xlsx)
   node index.js status                                 Show local processing summary
+  node index.js exceptions                             Orders that keep failing, and why
+  node index.js retry --order <csid> | --all           Retry a failed/parked order on the next cycle
   node index.js test-alert                             Send a test email (verify alerts)
 
 Configured channels: ${Object.keys(CHANNELS).join(", ")}

@@ -6,13 +6,52 @@
 // (pick-task discovery + validate) and reports what it WOULD do, stopping
 // before any irreversible write (packages / invoices / ship labels).
 
-import { SHIP_LABEL_RESOLUTION, DEFAULT_PACKAGE } from "./config.js";
+import { SHIP_LABEL_RESOLUTION, DEFAULT_PACKAGE, MAX_ORDER_ATTEMPTS, isTransientError } from "./config.js";
 import { SmartHubClient } from "./api.js";
 import { store } from "./store.js";
 import { log } from "./log.js";
 
 // Statuses that mean a shipment still needs packing/labelling.
 const PACKABLE = new Set(["BOUND"]);
+
+// Record one order's failure and say so out loud.
+//
+// WHY the log line: every one of these used to be audited into state.json and
+// nowhere else, so the Activity Log showed "0 labelled, 12 failed" with no way
+// to find out why without opening a JSON file. The reason now reaches the
+// operator at the moment it happens.
+//
+// `transient` marks errors that are expected to clear on their own (label not
+// ready, throttling, a 5xx). Those are logged and counted but do not spend the
+// retry budget, so a slow morning cannot park orders that were going to work.
+function noteFailure(channelKey, date, shipment, reason, { transient = false } = {}) {
+  const csid = shipment.customerShipmentId;
+  const short = String(reason).replace(/\s+/g, " ").slice(0, 160);
+  let r;
+  try {
+    r = store.recordFailure(csid, {
+      orderId: shipment.orderId,
+      channel: channelKey,
+      date,
+      reason: short,
+      transient,
+    });
+  } catch (e) {
+    // A degraded store throws on write. The caller is already stopping; make
+    // sure the reason itself still reaches the log.
+    log.err(`[${channelKey}] ${shipment.orderId} [${csid}] ${short} (not recorded: ${e.message})`);
+    return null;
+  }
+  const budget = transient ? "" : ` (attempt ${r.hardAttempts}/${MAX_ORDER_ATTEMPTS})`;
+  log.warn(`[${channelKey}] ${shipment.orderId} [${csid}] ${short}${budget}`);
+  if (r.newlyParked) {
+    log.err(
+      `[${channelKey}] ${shipment.orderId} [${csid}] PARKED after ${r.hardAttempts} failed attempts — it will be skipped until you press Retry. Reason: ${short}`
+    );
+    store.audit(channelKey, "parked", `${shipment.orderId} [${csid}] after ${r.hardAttempts}: ${short}`);
+  }
+  return r;
+}
 
 // Flatten the validate response's skuCustomerShipmentMapping into a flat list
 // of unique shipments.
@@ -82,8 +121,13 @@ async function processBatch(client, { channel, date, batch, boxName, lineItemsBy
   const pkgResp = await client.createPackages(batch.map((s) => buildPackage(s, boxName)));
   const pkgErrors = pkgResp?.shipmentIdToErrorMap || {};
   let work = batch.filter((s) => !pkgErrors[s.customerShipmentId]);
+  const byId = new Map(batch.map((s) => [s.customerShipmentId, s]));
   for (const id of Object.keys(pkgErrors)) {
-    store.audit(channel.key, "pack-failed", `${id}: ${JSON.stringify(pkgErrors[id]).slice(0, 120)}`);
+    const detail = errorText(pkgErrors[id]);
+    store.audit(channel.key, "pack-failed", `${id}: ${detail.slice(0, 120)}`);
+    noteFailure(channel.key, date, byId.get(id) || { customerShipmentId: id }, `pack failed: ${detail}`, {
+      transient: isTransientError(detail),
+    });
   }
   if (!work.length) return { labeled: [], failed: [], packErrors: Object.keys(pkgErrors).length };
 
@@ -93,7 +137,13 @@ async function processBatch(client, { channel, date, batch, boxName, lineItemsBy
 
   if (channel.requiresPickupSlot) {
     const missing = work.filter((s) => !slotMap[s.customerShipmentId]);
-    for (const s of missing) store.audit(channel.key, "no-slot", `${s.orderId} [${s.customerShipmentId}]`);
+    for (const s of missing) {
+      store.audit(channel.key, "no-slot", `${s.orderId} [${s.customerShipmentId}]`);
+      // Transient by nature: courier pickup slots are published through the day,
+      // so an order with no slot at 09:00 usually has one by 11:00. Parking these
+      // would strand perfectly good orders.
+      noteFailure(channel.key, date, s, "no courier pickup slot offered yet", { transient: true });
+    }
     work = work.filter((s) => slotMap[s.customerShipmentId]);
     if (!work.length) return { labeled: [], failed: [], packErrors: Object.keys(pkgErrors).length };
   }
@@ -112,6 +162,10 @@ async function processBatch(client, { channel, date, batch, boxName, lineItemsBy
   });
   const labelResp = await client.generateShipLabel(shipLabelRequests);
   const trackingMap = labelResp?.shipmentIdToPackageTrackingInfoListMap || {};
+  // generate-shiplabel reports per-shipment reasons in the same shape as
+  // createPackages. We used to ignore it and log a bare "no trackingId", which
+  // told the operator nothing; the real code (e.g. LYCS_INVALID_INPUT) is here.
+  const labelErrors = labelResp?.shipmentIdToErrorMap || {};
 
   const labeled = work.filter((s) => ((trackingMap[s.customerShipmentId] || [])[0] || {}).trackingId);
   const failed = work.filter((s) => !((trackingMap[s.customerShipmentId] || [])[0] || {}).trackingId);
@@ -126,9 +180,33 @@ async function processBatch(client, { channel, date, batch, boxName, lineItemsBy
       lineItems: lineItemsByCsid[s.customerShipmentId] || [],
     });
   }
-  for (const s of failed) store.audit(channel.key, "label-failed", `${s.orderId} [${s.customerShipmentId}] no trackingId`);
+  for (const s of failed) {
+    const detail = labelErrors[s.customerShipmentId]
+      ? errorText(labelErrors[s.customerShipmentId])
+      : "label call returned no tracking id and no error";
+    store.audit(channel.key, "label-failed", `${s.orderId} [${s.customerShipmentId}] ${detail}`.slice(0, 160));
+    noteFailure(channel.key, date, s, `label failed: ${detail}`, { transient: isTransientError(detail) });
+  }
 
   return { labeled, failed, packErrors: Object.keys(pkgErrors).length };
+}
+
+// SmartHub error payloads are sometimes a string, sometimes an object with a
+// code and/or message, sometimes a list. Pull out something an operator can
+// actually read, and fall back to compact JSON rather than "[object Object]".
+function errorText(err) {
+  if (err == null) return "unknown error";
+  if (typeof err === "string") return err;
+  if (Array.isArray(err)) return err.map(errorText).join("; ");
+  const code = err.errorCode || err.code || err.type;
+  const msg = err.errorMessage || err.message || err.description || err.reason;
+  if (code && msg) return `${code}: ${msg}`;
+  if (code || msg) return String(code || msg);
+  try {
+    return JSON.stringify(err).slice(0, 200);
+  } catch {
+    return String(err);
+  }
 }
 
 function buildPackage(s, boxName) {
@@ -145,16 +223,29 @@ function buildPackage(s, boxName) {
   };
 }
 
-export async function processChannel(client, { channel, date, dryRun, limit }) {
+// `quietIfEmpty` is for the look-back dates (item 3). Yesterday and the day
+// before are checked every hour and are almost always empty, so with normal
+// logging they would bury today's real activity in "No activated pick task
+// found" warnings and write an audit row each time. When quiet, a look-back
+// date only speaks up if it actually has work.
+export async function processChannel(client, { channel, date, dryRun, limit, quietIfEmpty = false }) {
   const mode = dryRun ? "DRY-RUN" : "LIVE";
-  log.step(`[${channel.key}] ${mode} — date ${date}`);
-  store.audit(channel.key, "run-start", `${mode} date=${date}`);
+  if (!quietIfEmpty) {
+    log.step(`[${channel.key}] ${mode} — date ${date}`);
+    store.audit(channel.key, "run-start", `${mode} date=${date}`);
+  }
 
   // 1. Discover activated pick tasks for this channel/date.
   const tasks = await client.findPickTasks(date, channel.salesChannel);
   if (!tasks.length) {
+    if (quietIfEmpty) return { channel: channel.key, shipments: 0, processed: 0, date, quiet: true };
     log.warn(`[${channel.key}] No activated pick task found for ${date}. Activate the pick list first.`);
-    return { channel: channel.key, shipments: 0, processed: 0 };
+    return { channel: channel.key, shipments: 0, processed: 0, date };
+  }
+  if (quietIfEmpty) {
+    // There IS work on an earlier date — that is worth saying.
+    log.step(`[${channel.key}] ${mode} — catching up on ${date}`);
+    store.audit(channel.key, "run-start", `${mode} date=${date} (look-back)`);
   }
   log.info(`[${channel.key}] Found ${tasks.length} pick task(s): ${tasks.map((t) => `${t.id}(${t.status})`).join(", ")}`);
 
@@ -203,7 +294,13 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
     unique.push(s);
   }
 
+  // Parked orders (item 2): repeatedly failed on a non-transient error, so the
+  // agent stops burning a slot on them every cycle and waits for a human. ONE
+  // store read for the whole channel, not one per order.
+  const parked = store.parkedIds();
+
   let todo = [];
+  const skippedParked = [];
   for (const s of unique) {
     // SmartHub status is the SOURCE OF TRUTH for idempotency: only BOUND
     // shipments still need packing. A packed/labelled order moves out of BOUND,
@@ -212,7 +309,19 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
     // failure that returns OK but doesn't persist), and must never block an order
     // that SmartHub still shows as unpacked.
     if (!PACKABLE.has(s.shipmentStatus)) continue;
+    if (parked.has(s.customerShipmentId)) {
+      skippedParked.push(s);
+      continue;
+    }
     todo.push(s);
+  }
+
+  if (skippedParked.length) {
+    log.warn(
+      `[${channel.key}] Skipping ${skippedParked.length} parked order(s) that failed ${MAX_ORDER_ATTEMPTS}+ times: ` +
+        skippedParked.map((s) => s.orderId).join(", ") +
+        " — open Needs attention on the control page to retry or handle them in SmartHub."
+    );
   }
 
   // Optional cap (e.g. --limit 1 for a careful first live test).
@@ -233,12 +342,12 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
   if (dryRun) {
     log.ok(`[${channel.key}] DRY-RUN complete. Would pack+label ${todo.length} shipment(s). No changes made.`);
     store.audit(channel.key, "dry-run", `would process ${todo.length}`);
-    return { channel: channel.key, shipments: unique.length, processed: 0, dryRun: true };
+    return { channel: channel.key, shipments: unique.length, processed: 0, dryRun: true, date, parked: skippedParked.length };
   }
 
   if (!todo.length) {
     log.ok(`[${channel.key}] Nothing to process.`);
-    return { channel: channel.key, shipments: unique.length, processed: 0 };
+    return { channel: channel.key, shipments: unique.length, processed: 0, date, parked: skippedParked.length };
   }
 
   // 3. LIVE — irreversible from here. Process in BATCHES so large channels (e.g.
@@ -264,6 +373,11 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
       failedCount += batch.length;
       log.err(`[${channel.key}] Batch ${i + 1} failed: ${e.message}. Continuing with next batch.`);
       store.audit(channel.key, "batch-error", `batch ${i + 1}/${batches.length}: ${e.message}`.slice(0, 160));
+      // Charge the whole batch, so an order that is genuinely poisoning the
+      // call (rather than a passing 503) eventually parks instead of taking the
+      // batch down with it every 15 minutes forever.
+      const transient = isTransientError(e.message);
+      for (const s of batch) noteFailure(channel.key, date, s, `batch error: ${e.message}`, { transient });
     }
   }
 
@@ -273,5 +387,12 @@ export async function processChannel(client, { channel, date, dryRun, limit }) {
   } else {
     log.ok(`[${channel.key}] LIVE complete. Labelled ${labeledCount} shipment(s)${failedCount ? `, ${failedCount} to retry` : ""}. Run \`print\` to get the PDF.`);
   }
-  return { channel: channel.key, shipments: unique.length, processed: labeledCount, failed: failedCount };
+  return {
+    channel: channel.key,
+    shipments: unique.length,
+    processed: labeledCount,
+    failed: failedCount,
+    date,
+    parked: skippedParked.length,
+  };
 }

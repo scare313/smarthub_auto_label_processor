@@ -37,11 +37,65 @@ export function openFile(file) {
   }
 }
 
+// Split the orders we asked for into those SmartHub actually put in the PDF and
+// those it left out. Exported so the behaviour is testable on its own.
+//
+// WHY this exists: the print step used to mark every REQUESTED order as printed.
+// When SmartHub silently dropped one from the combined PDF, that order was
+// recorded as printed, never appeared in a later batch, and the parcel sat on the
+// shelf with no label. Only what is in the file may be marked printed.
+//
+// The fallback matters as much as the main path. If `ordersIncluded` is missing,
+// empty, or shares nothing with our ids (an API shape change, or an id format we
+// do not recognise), an empty intersection would mark NOTHING printed and reprint
+// the whole batch on the next run. In that case we trust the request, exactly as
+// the old code did, and say so loudly.
+export function splitByIncluded(orders, ordersIncluded, docErrors = []) {
+  const failedIds = new Set();
+  for (const e of docErrors || []) if (e && e.orderId) failedIds.add(String(e.orderId));
+
+  const included = new Set((ordersIncluded || []).map(String));
+  const overlaps = orders.some((o) => included.has(String(o.customerShipmentId)));
+
+  if (!overlaps) {
+    // Unusable signal. Trust the request, minus anything explicitly reported as
+    // failed — a duplicate print is visible and recoverable; an unlabelled parcel
+    // is neither.
+    const kept = orders.filter((o) => !failedIds.has(String(o.customerShipmentId)));
+    return {
+      printed: kept,
+      missing: orders.filter((o) => failedIds.has(String(o.customerShipmentId))),
+      trustedRequest: true,
+    };
+  }
+
+  const printed = [];
+  const missing = [];
+  for (const o of orders) {
+    const id = String(o.customerShipmentId);
+    if (included.has(id) && !failedIds.has(id)) printed.push(o);
+    else missing.push(o);
+  }
+  return { printed, missing, trustedRequest: false };
+}
+
 // Generate one combined label PDF for a set of channels.
 // - default: only UNPRINTED orders ("Print New Labels", incremental).
 // - all=true: ALL labeled orders for today's processing ("Print all today's
 //   labels", a complete master set). Still marks them printed.
-export async function printNewLabels(client, { channelKeys, date, open = true, all = false } = {}) {
+// - deferMark=true: write the PDF but do NOT mark anything printed; return the
+//   ids as `pendingIds` instead. Used when this machine is a peer and the hub
+//   still has to merge and save the combined file — see server.js.
+export async function printNewLabels(client, { channelKeys, date, open = true, all = false, deferMark = false } = {}) {
+  // A degraded state file means we cannot tell what has already been printed.
+  // Printing from an EMPTY state would reprint every label for the day.
+  const health = store.health();
+  if (!health.ok) {
+    log.err(`Printing BLOCKED — ${health.reason}`);
+    log.err(health.hint);
+    throw new Error(`Cannot print: ${health.reason}`);
+  }
+
   const source = all
     ? store.listLabeled({ date: date || printDayIST() }) // all labeled for the day
     // Only unprinted: today plus any earlier day missed, never a future ship date.
@@ -77,14 +131,56 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
     log.step(`[${channelKey}] Combining ${ids.length} ${all ? "" : "unprinted "}label(s)... (SKU-sorted)`);
 
     let url;
+    let ordersIncluded = [];
+    let docErrors = [];
     try {
-      ({ url } = await client.retrieveCombinedLabelUrl(ids, channel.marketplace));
+      ({ url, ordersIncluded = [], errors: docErrors = [] } = await client.retrieveCombinedLabelUrl(
+        ids,
+        channel.marketplace
+      ));
     } catch (e) {
       log.err(`[${channelKey}] Could not retrieve combined PDF: ${e.message}`);
       store.audit(channelKey, "print-error", e.message);
       continue;
     }
     const bytes = await client.downloadBytes(url);
+
+    // Item 1: only what is actually in the PDF may be marked printed.
+    const { printed, missing, trustedRequest } = splitByIncluded(orders, ordersIncluded, docErrors);
+
+    if (trustedRequest) {
+      log.warn(
+        `[${channelKey}] SmartHub returned no usable ordersIncluded list (got ${JSON.stringify(ordersIncluded).slice(0, 120)}). ` +
+          `Falling back to trusting the request for all ${ids.length} order(s). Check the PDF page count before handing it over.`
+      );
+      store.audit(channelKey, "print-no-included-list", `${ids.length} orders, trusted the request`);
+    }
+
+    if (missing.length) {
+      const detail = missing.map((o) => `${o.orderId} [${o.customerShipmentId}]`).join(", ");
+      const reasons = (docErrors || [])
+        .map((e) => `${e.orderId}: ${e.errorMessage}`)
+        .join("; ")
+        .slice(0, 200);
+      log.warn(
+        `[${channelKey}] ${missing.length} of ${ids.length} order(s) were NOT in the combined PDF and stay unprinted ` +
+          `(they will be included in the next print): ${detail}${reasons ? ` — ${reasons}` : ""}`
+      );
+      store.audit(channelKey, "print-missing", `${missing.length} not in PDF: ${detail}`.slice(0, 160));
+    }
+
+    if (!printed.length) {
+      log.err(
+        `[${channelKey}] The combined PDF contained none of the ${ids.length} requested order(s). ` +
+          `Nothing marked printed; the file was not saved. This usually means the labels are not ready yet.`
+      );
+      store.audit(channelKey, "print-empty", `${ids.length} requested, 0 included`);
+      continue;
+    }
+
+    // Everything below — the file name, the pick manifest, the print log and the
+    // printed flag — must describe the PRINTED subset, not the request.
+    const printedIds = printed.map((o) => o.customerShipmentId);
 
     // Group by the date we are PRINTING (today, IST), so all of a day's prints
     // — morning and afternoon — land in the same folder regardless of each
@@ -94,13 +190,13 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
     fs.mkdirSync(dayDir, { recursive: true });
     const batchId = `${channelKey}-${stamp.slice(11)}`;
     const prefix = all ? "print-all" : "print";
-    const file = path.join(dayDir, `${prefix}-${day}-${batchId}-${ids.length}orders.pdf`);
+    const file = path.join(dayDir, `${prefix}-${day}-${batchId}-${printedIds.length}orders.pdf`);
     fs.writeFileSync(file, bytes);
 
-    // Pick manifest for exactly these orders, saved alongside the labels so the
-    // employee picks the products, then packs using the labels.
+    // Pick manifest for exactly the orders in the PDF, saved alongside the
+    // labels so the employee picks the products, then packs using the labels.
     let pickFile = null;
-    const pickRows = rowsFromOrders(orders); // exposed on the result too, for cross-machine merging
+    const pickRows = rowsFromOrders(printed); // exposed on the result too, for cross-machine merging
     try {
       const rows = pickRows;
       if (rows.length) {
@@ -117,20 +213,42 @@ export async function printNewLabels(client, { channelKeys, date, open = true, a
     // Append to the day's print log (cumulative, never overwritten) so there's
     // an end-of-day record of how many labels were printed and at what time.
     try {
-      const logLine = `${new Date().toISOString()}\t${channelKey}\t${ids.length} orders\t${path.basename(file)}\t${orders.map((o) => o.orderId).join(",")}\n`;
+      const logLine = `${new Date().toISOString()}\t${channelKey}\t${printedIds.length} orders\t${path.basename(file)}\t${printed.map((o) => o.orderId).join(",")}\n`;
       fs.appendFileSync(path.join(dayDir, `print-log-${day}.tsv`), logLine);
     } catch (e) {
       log.warn(`[${channelKey}] Could not write print log: ${e.message}`);
     }
 
-    // Mark printed only AFTER the PDF is safely written.
-    store.markPrinted(ids, batchId);
-    store.audit(channelKey, "printed", `${ids.length} -> ${path.basename(file)}`);
+    // Mark printed only AFTER the PDF is safely written — and only the orders
+    // that are actually in it.
+    //
+    // deferMark (item 5): on a peer machine the PDF written here is an
+    // intermediate. The labels the warehouse will actually use are in the hub's
+    // merged file, so the hub confirms once that file is on disk. Until then
+    // these orders stay unprinted, which means a lost confirmation reprints them
+    // rather than losing them.
+    if (deferMark) {
+      log.info(`[${channelKey}] ${printedIds.length} label(s) held as unprinted until the hub confirms the merge.`);
+    } else {
+      store.markPrinted(printedIds, batchId);
+      store.audit(channelKey, "printed", `${printedIds.length} -> ${path.basename(file)}`);
+    }
 
-    log.ok(`[${channelKey}] Printed batch: ${file} (${ids.length} orders, ${bytes.length} bytes)`);
-    results.push({ channel: channelKey, file, pickFile, pickRows, count: ids.length });
+    log.ok(`[${channelKey}] Printed batch: ${file} (${printedIds.length} orders, ${bytes.length} bytes)`);
+    results.push({
+      channel: channelKey,
+      file,
+      pickFile,
+      pickRows,
+      count: printedIds.length,
+      batchId,
+      requested: ids.length,
+      missing: missing.length,
+      pendingIds: deferMark ? printedIds : [],
+    });
 
-    if (open) {
+    // Nothing to open on a peer: the operator never looks at the intermediate.
+    if (open && !deferMark) {
       openFile(file);
       if (pickFile) openFile(pickFile);
     }

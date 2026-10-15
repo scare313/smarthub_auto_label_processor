@@ -33,17 +33,17 @@ like unrelated failures.
 ## 2. Map of the code
 
 ```
-server.js        408   Web server + routes + scheduler wiring      ← start here
-index.js         339   CLI (same actions, for debugging)
+server.js        717   Web server + routes + scheduler wiring      ← start here
+index.js         401   CLI (same actions, for debugging)
 
 src/
-  config.js       92   Channels, box size, paths, todayIST()       ← tunables
-  api.js         347   SmartHubClient — every API call
+  config.js      180   Channels, box size, paths, dates, tunables  ← tunables
+  api.js         351   SmartHubClient — every API call
   agent.js        67   Browser lifecycle + session state
-  pipeline.js    277   THE CORE: pack → label → record             ← most bugs
-  print.js       166   Download labels → combined PDF → mark printed
-  scheduler.js    94   15-min clock-aligned loop, runCycle()
-  store.js       130   state.json read/write (what's processed/printed)
+  pipeline.js    398   THE CORE: pack → label → record             ← most bugs
+  print.js       284   Download labels → combined PDF → mark printed
+  scheduler.js   234   15-min clock-aligned loop, runCycle()
+  store.js       417   state.json read/write, failures, backups
   activate.js     62   Turn new orders into pick lists
   status.js       48   "Today's status" numbers
   picklist.js    191   SKU pick manifest (Excel)
@@ -53,10 +53,13 @@ src/
   heartbeat.js   106   Watchdog — "processing has stopped"
   alert.js        90   Login-expired alerts (file + toast + email)
   notify.js       53   Email sending
-  log.js          50   Logging + the ring buffer the page shows
+  log.js         117   Logging + the ring buffer + the daily log file
 
 public/index.html     The control page (one file, no framework)
 data/state.json       The ONLY durable record. Treat as precious.
+data/backups/         Daily copies of state.json (14 days)
+data/peer-backups/    The other machine's daily copies, pushed over Tailscale
+data/logs/            agent-YYYY-MM-DD.log, one file per IST day (14 days)
 config/peers.json     Machine-to-machine config (gitignored)
 config/alerts.json    Email credentials (gitignored)
 profile/              Logged-in browser session (gitignored)
@@ -73,16 +76,18 @@ What happens every 15 minutes:
 scheduler.js  startScheduler()          fires on :00/:15/:30/:45
       │
       ▼
-scheduler.js  runCycle({ date })        date = todayIST()   ← ONLY today
+scheduler.js  runCycle()
       │
-      ├─ agent.js   getClient()         reuse browser, or launch it
-      ├─ agent.js   checkSession()      alive? else alert + stop
+      ├─ store.health()                  state.json readable? else STOP
+      ├─ agent.js   getClient()          reuse browser, or launch it
+      ├─ agent.js   checkSession()       alive? else alert + stop
+      ├─ datesForThisCycle()             today, plus the last 2 days hourly
       │
       └─ for each channel (amazon, flipkart, meesho, fba):
              │
              ├─ activate.js  activateChannel()     new orders → pick list
              │
-             └─ pipeline.js  processChannel()
+             └─ for each date: pipeline.js  processChannel()
                     │
                     ├─ findPickTasks(date)         what's to do today
                     ├─ validatePickTask(id)        shipments in that task
@@ -94,19 +99,30 @@ scheduler.js  runCycle({ date })        date = todayIST()   ← ONLY today
                            ├─ listPickupSlots()
                            ├─ generateInvoices()
                            ├─ generateShipLabel()  ← IRREVERSIBLE
-                           └─ store.markProcessed(... status LABELED)
+                           ├─ store.markProcessed(... status LABELED)
+                           └─ store.recordFailure() for anything that failed
+      │
+      ├─ notify newly parked orders (email, once each)
+      └─ store.backupDaily()             first cycle of each IST day
 ```
+
+An order that fails is recorded with its reason and its attempt count. After
+**5 non-transient attempts** it is *parked*: skipped by later cycles until
+someone presses Retry. Transient errors (throttling, 503, label-not-ready) are
+recorded but never count toward that cap.
 
 Then, separately, when someone presses **Print New Labels**:
 
 ```
 print.js  printNewLabels()
+      ├─ store.health()                                 readable? else refuse
       ├─ store.listUnprinted({ maxDate: todayIST() })   today + earlier only
       ├─ retrieveCombinedLabelUrl(ids)                  ask SmartHub for a PDF
+      ├─ splitByIncluded(...)                           what is REALLY in the PDF
       ├─ downloadBytes(url)                             fetch it
       ├─ sort by SKU                                    match the pick list
       ├─ writeRowsToXlsx()                              pick manifest
-      └─ store.markPrinted(ids, batchId)                never reprints
+      └─ store.markPrinted(printedIds, batchId)         never reprints
 ```
 
 **Processing and printing are deliberately separate.** Processing is automatic
@@ -141,6 +157,21 @@ export const DEFAULT_PACKAGE = {
 Asia/Kolkata. **Changing how this works changes which orders get processed** —
 be careful.
 
+The reliability tunables live at the bottom of the same file:
+
+```js
+export const LOOKBACK_DAYS = 2;              // today + 2 earlier days
+export const LOOKBACK_EVERY_MS = 3600000;    // earlier days re-checked hourly
+export const MAX_ORDER_ATTEMPTS = 5;         // hard failures before parking
+export const TRANSIENT_ERROR_PATTERNS = [...];  // these never count toward it
+export const BACKUP_RETENTION_DAYS = 14;
+export const LOG_RETENTION_DAYS = 14;
+```
+
+**`config.js` must never import `log.js`.** `log.js` imports `config.js` for the
+data directory and the date, so the reverse direction would be a cycle and both
+modules would come up empty.
+
 > `cutoff` is currently **defined but unused**. Nothing warns you before a
 > deadline. See `RISKS.md` §D.
 
@@ -153,8 +184,10 @@ The heart of it. Two functions matter:
 2. Validate each → list of shipments
 3. **Reconcile orphans** — anything packed in SmartHub but missing from our
    store gets added as `LABELED`, so it can still be printed. This is what
-   rescues manual fixes, *but only for the date currently being processed.*
-4. Split into batches of 15 and process each
+   rescues manual fixes, for every date the cycle is covering.
+4. **Skip parked orders** — `store.parkedIds()` is read once, then anything in
+   it is left out of the batch and counted in the `parked` return value.
+5. Split into batches of 15 and process each
 
 **`processBatch()`** — the irreversible part:
 
@@ -162,16 +195,24 @@ The heart of it. Two functions matter:
 const pkgResp = await client.createPackages(...);     // ← LYCS_INVALID_INPUT here
 const pkgErrors = pkgResp?.shipmentIdToErrorMap || {};
 for (const id of Object.keys(pkgErrors)) {
-  store.audit(channel.key, "pack-failed", `${id}: ...`);   // audit only, NOT logged
+  store.audit(channel.key, "pack-failed", `${id}: ${detail}`);
+  noteFailure(channel.key, date, shipment, `pack failed: ${detail}`, { transient });
 }
 ```
 
-**That last line is why failures look invisible.** The error goes into
-`state.json`, but the Activity Log only shows "0 labelled successfully". To make
-failures visible on the page, add a `log.warn(...)` next to that `store.audit`.
+`noteFailure()` is the single place a failure is recorded. It does three things:
+writes the reason and the attempt count into `state.json`, logs the reason so it
+shows up in the Activity Log on the page, and — when the attempt cap is reached —
+logs an error and audits `parked`.
 
-Also note: **there is no attempt limit.** A failing order is retried every cycle
-forever, which is how SmartHub ends up hard-blocking orders.
+`errorText()` next to it flattens SmartHub's error payloads, which arrive as a
+plain string, an array of strings or an object with a `message`, depending on the
+endpoint. Every failure path goes through it, so there is no "undefined" in the
+log.
+
+**Failure reasons are visible on the page now** — they used to go only into
+`state.json`, which is why failures looked invisible and the log said nothing but
+"0 labelled successfully".
 
 **Verify-before-record** is important and deliberate:
 
@@ -209,7 +250,7 @@ To add a new API call, copy an existing method and consult `SMARTHUB_API.md`
 
 ### `src/store.js` — the durable record
 
-One JSON file, three top-level keys:
+One JSON file:
 
 ```js
 {
@@ -217,15 +258,40 @@ One JSON file, three top-level keys:
       orderId, channel, date, labelFile, trackingId,
       status: "LABELED", ts, printed, printedAt, printBatchId
   }},
+  failures:  { "<customerShipmentId>": {
+      orderId, channel, date, reason, transient,
+      attempts, hardAttempts, parked, firstAt, lastAt
+  }},
   audit:     [ { ts, channel, action, detail } ],
-  lastPrint: [ "<file paths>" ]
+  lastPrint: [ "<file paths>" ],
+  backupDay: "YYYY-MM-DD"
 }
 ```
 
 - `processed` → idempotency. `printed: false` means "waiting to print".
-- `audit` → append-only history. **This is where failure reasons live**, and
-  it's the first thing to read when something goes wrong.
+- `failures` → why an order has not shipped, and how many times it has been
+  tried. `attempts` counts every failure; `hardAttempts` counts only the
+  non-transient ones, and that is the number compared against the cap. A
+  successful `markProcessed()` deletes the order's entry.
+- `audit` → append-only history, the first thing to read when something goes wrong.
 - Writes are **atomic** (temp file + rename), so it can't be half-written.
+
+**Two safety rules are built into the reader**, and both matter more than they
+look:
+
+1. **A parse failure is never treated as "no orders processed".** If it were,
+   every order already labelled would look new and get a second label. Instead
+   the bad file is renamed to `state.corrupt-<timestamp>.json`, the store goes
+   **degraded**, and every live action refuses to run with a message naming the
+   newest backup. Recovery is a human copying a backup over `state.json`.
+2. **A missing file is normal** — that is a first run. But a missing file *next
+   to* a `state.corrupt-*` marker is not, so that case stays degraded too.
+   Otherwise one restart after a quarantine would look like a fresh install and
+   reprint everything.
+
+`store.backupDaily()` writes `data/backups/state-YYYY-MM-DD.json` on the first
+cycle of each IST day, keeps 14, and the hub copies the peer's backup into
+`data/peer-backups/` the same day. It never backs up an empty or degraded state.
 
 **Deleting this file makes everything reprint.** It contains **no customer PII** —
 no names, addresses, or phone numbers — so it's safe to back up or share.
@@ -247,6 +313,23 @@ morning print and an evening print land in the same day's folder.
 
 Labels are sorted by SKU so they line up with the pick manifest.
 
+**What we asked for is not always what we got.** SmartHub's combined-document
+response carries an `ordersIncluded` list and an `errors` list, and an order can
+be left out of the PDF. Marking such an order printed means that parcel never
+gets a label and never ships, so `splitByIncluded()` reconciles the two lists
+before anything is marked:
+
+```js
+const { printed, missing, trustedRequest } = splitByIncluded(orders, ordersIncluded, docErrors);
+```
+
+Only `printed` is marked. `missing` is logged, audited as `print-missing`, and
+stays unprinted so the next press picks it up. If `ordersIncluded` comes back in
+a shape we do not recognise — no id in it matches anything we asked for — the
+request list is trusted instead and the fallback is audited as
+`print-no-included-list`. That direction is deliberate: a duplicate print is
+visible and cheap, a parcel with no label is neither.
+
 ### `src/scheduler.js`
 
 ```js
@@ -260,23 +343,61 @@ Re-arms with `setTimeout` after each run (not `setInterval`), so it lands on
 :00/:15/:30/:45 and can't drift. It also runs once immediately on startup.
 
 ```js
-const shipDate = date || todayIST();   // ← the midnight-rollover gap
+export function datesForThisCycle({ now, lookbackDays, lastAt } = {}) {
+  const all = processingDates({ lookbackDays, now: new Date(now) });
+  const due = now - lastAt >= LOOKBACK_EVERY_MS;
+  return due ? all : all.slice(0, 1);        // today always; earlier days hourly
+}
 ```
 
-**That one line is the cause of abandoned previous-day orders.** Making it a
-*list* of dates (today plus the last day or two) is the look-back fix.
+A cycle used to process `todayIST()` and nothing else, so at midnight IST it
+moved to the new date and never looked at the old one again — 19 orders were
+abandoned that way in August 2026. Now every cycle covers today, and once an
+hour it also covers the two previous days. `lastLookbackAt` starts at 0, so the
+first cycle after any restart includes the catch-up.
+
+Hourly rather than every cycle because each extra date costs a pick-task query
+plus a validate call **per channel** — four channels times three dates every
+15 minutes would triple the query load to catch something that, when it
+happened, sat unnoticed for days.
+
+`runCycle()` also starts with a `store.health()` guard. A degraded state file
+stops the cycle before the browser is touched, emails once, and returns
+`{ ok: false, reason: "store-degraded" }`. `activateChannel()` runs once per
+channel, outside the date loop, because a pick list is created from new orders
+rather than per ship date.
 
 ### `server.js`
 
 | Route | Does |
 |---|---|
-| `GET /api/status` | Session, pending count, status table, peers |
+| `GET /api/status` | Session, pending count, status table, peers, store health, exception counts |
 | `GET /api/log` | Recent log lines for the page |
 | `POST /api/run` | Process now |
 | `POST /api/print` | Print locally |
 | `POST /api/print-combined` | **Hub:** pull from peers, merge, print |
+| `GET /api/exceptions` | Orders that keep failing, and why (`?parked=1` to narrow) |
+| `POST /api/exceptions/retry` | Clear one order or all of them |
 | `POST /api/peer/print` | **Processor:** return my labels (token-auth) |
+| `POST /api/peer/confirm-print` | **Processor:** the hub saved the merge — mark them printed |
+| `GET /api/peer/state` | **Processor:** hand my state.json to the hub for backup |
+| `POST /api/peer/backup` | Store the other machine's daily backup copy |
 | `POST /api/login` | Open the login window on this machine |
+
+The four print routes all begin with `blockedByState(res)`, which returns a 503
+with recovery instructions when the state file is degraded — **before** a browser
+is launched or a peer is contacted.
+
+**The peer print handshake matters.** The peer used to mark its labels printed
+the moment it handed them to the hub, so if the merge then failed those labels
+were lost: marked printed, never in a PDF. Now the peer keeps the batch pending
+(`pendingPeerPrints`, 30-minute TTL), and the hub calls `confirm-print` only
+**after** every merged file is written. An unconfirmed batch simply stays
+unprinted, which is the safe direction.
+
+A peer running older code returns no `batchId`, so the hub sends no confirmation
+and that peer keeps its old immediate-mark behaviour. Version skew is tolerated
+deliberately, but still deploy both machines together.
 
 Everything goes through `queue.run(...)` so a scheduled cycle and a button press
 can never overlap. Only **one** browser can use the profile at a time — this
@@ -291,6 +412,10 @@ queue is what enforces that.
 | Box size / weight | `src/config.js` → `DEFAULT_PACKAGE` | **Test with `--limit 1` first** |
 | Add a channel | `src/config.js` → `CHANNELS` | Needs the right `salesChannel` code |
 | Cycle interval | `src/scheduler.js` → `startScheduler(fn, ms)` | Stays clock-aligned |
+| How far back a cycle looks | `src/config.js` → `LOOKBACK_DAYS` | Each day costs queries per channel |
+| Retries before parking | `src/config.js` → `MAX_ORDER_ATTEMPTS` | Only hard failures count |
+| What counts as "try again later" | `src/config.js` → `TRANSIENT_ERROR_PATTERNS` | Read the note on `LYCS_INVALID_INPUT` first |
+| Backup / log retention | `src/config.js` → `*_RETENTION_DAYS` | Default 14 days each |
 | Batch size (503s) | `src/pipeline.js` → `BATCH_SIZE` | Lower it |
 | Watchdog sensitivity | `src/heartbeat.js` → `STALE_AFTER_MS` | Default 45 min |
 | Port | `server.js` → `PORT` | Update firewall + `peers.json` too |
@@ -314,7 +439,28 @@ node index.js run --channel meesho --live --limit 1
 **One real order.** This is how both the `pickupSlotId` and weight problems were
 diagnosed. If it works, the batch will work.
 
-**Read the audit trail** — the single most useful debugging move:
+**Check what is failing first** — this is now the fastest first question:
+
+```bash
+node index.js exceptions
+```
+
+Parked orders are listed first, with the reason and the attempt count. Clear one
+with `node index.js retry --order <customerShipmentId>`, or all of them with
+`node index.js retry --all`. The same list is the "Needs attention" panel on the
+control page.
+
+**Read today's log file** when the page's ring buffer has already scrolled past
+the problem:
+
+```bash
+tail -n 100 data/logs/agent-$(date +%F).log
+```
+
+One file per IST day, 14 kept. If the directory cannot be written the file sink
+turns itself off with one warning and the console and the page keep working.
+
+**Read the audit trail** — still the deepest view:
 
 ```bash
 node -e "const s=require('./data/state.json');console.log(s.audit.slice(-30).map(a=>a.ts+' '+a.channel+' '+a.action+' | '+(a.detail||'').slice(0,120)).join('\n'))"
@@ -340,7 +486,9 @@ the *only* difference was `100 G` vs `0.2 KG`.
 | **Switching to headless** | Amazon SSO stalls. Looks like a login bug, isn't. |
 | **Using `context.request`** | Returns HTML, not JSON — no SSO tokens. Use `page.evaluate` + fetch. |
 | **Running CLI and server together** | Both want the browser profile; one fails with "already in use". |
-| **Deleting `state.json`** | Everything reprints. |
+| **Deleting `state.json`** | Everything reprints. Copy a file from `data/backups/` instead. |
+| **"Fixing" a degraded store by deleting the corrupt file** | The agent then sees a first run and relabels everything. Restore a backup. |
+| **Importing `log.js` from `config.js`** | Circular import; both modules come up empty at startup. |
 | **Pruning `state.json` too eagerly** | Reconciliation re-adds the order as unprinted → it prints again. Only prune `date < today && printed`. |
 | **Forgetting GraphQL is base64** | You'll parse garbage. |
 | **Updating only one machine** | Hub and peer share a protocol; version skew breaks combined printing silently. |
@@ -354,11 +502,11 @@ These are *missing*, not broken — don't be surprised by them:
 
 | Gap | Effect | Fix |
 |---|---|---|
-| **No attempt limit** | Failing orders retry forever until SmartHub blocks them | `RISKS.md` §C |
-| **Today-only processing** | Previous-day orders abandoned at midnight | Look-back window |
-| **Errors not logged** | Failures invisible on the page | Add `log.warn` beside `store.audit` in `pipeline.js` |
 | **Cutoffs unused** | No warning before a deadline | `RISKS.md` §D |
 | **No external watcher** | If the hub itself dies, nothing alerts | Needs the always-on third machine |
+| **No automated tests** | Every change is verified by hand | `IMPROVEMENTS.md` §6.4 |
+| **Backups are local plus one peer** | Both machines in the same shop; a site loss loses both | Off-site copy |
+| **Degraded state needs a human** | The agent stops rather than restoring a backup itself | Deliberate: auto-restore would reprint |
 
 ---
 

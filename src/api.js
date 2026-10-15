@@ -333,7 +333,11 @@ export class SmartHubClient {
     if (errors.length) log.warn("Some documents failed:", JSON.stringify(errors).slice(0, 300));
     const url = result?.fileDetails?.url;
     if (!url) throw new Error("retrieveCombinedLabelUrl: no file URL returned");
-    return { url, ordersIncluded: result.ordersIncluded || [] };
+    // `ordersIncluded` is what SmartHub actually put in the PDF, and `errors`
+    // names the orders it left out. The caller must reconcile both against what
+    // it asked for — marking a requested-but-missing order as printed would mean
+    // that parcel never gets a label and never ships.
+    return { url, ordersIncluded: result.ordersIncluded || [], errors };
   }
 
   // Download a (presigned S3) URL and return its bytes. No auth headers — the

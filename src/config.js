@@ -12,9 +12,13 @@ export const BASE_URL = "https://smarthub.amazon.in";
 // Persistent Playwright profile (holds the logged-in Amazon session).
 export const PROFILE_DIR = path.join(ROOT, "profile");
 // Where downloaded label PDFs are written: labels/YYYY-MM-DD/...
-export const LABELS_DIR = path.join(ROOT, "labels");
-// Local JSON state store (idempotency + audit).
-export const DATA_DIR = path.join(ROOT, "data");
+// AOP_LABELS_DIR overrides it for the same reason AOP_DATA_DIR exists — so a
+// test never drops files into the real print folder an employee works from.
+export const LABELS_DIR = process.env.AOP_LABELS_DIR || path.join(ROOT, "labels");
+// Local JSON state store (idempotency + audit). AOP_DATA_DIR overrides it, so a
+// test or a dry experiment can point at a scratch directory instead of the live
+// state file.
+export const DATA_DIR = process.env.AOP_DATA_DIR || path.join(ROOT, "data");
 
 // Per-marketplace settings. salesChannel is the exact code the API expects;
 // marketplace is what RetrieveBatchOrderDocuments expects for label retrieval.
@@ -58,15 +62,42 @@ export const CHANNELS = {
   },
 };
 
+// Shared IST (Asia/Kolkata) date formatter. India has no DST, so treating a day
+// as exactly 24h is exact for calendar arithmetic here.
+const IST_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 // Today's date in IST (Asia/Kolkata), formatted YYYY-MM-DD.
 export function todayIST() {
-  const f = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Kolkata",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  return f.format(new Date());
+  return IST_DATE.format(new Date());
+}
+
+// The IST calendar date `daysAgo` days before now, formatted YYYY-MM-DD.
+export function istDateDaysAgo(daysAgo, now = new Date()) {
+  return IST_DATE.format(new Date(now.getTime() - Math.max(0, daysAgo) * DAY_MS));
+}
+
+// Ship dates one processing cycle should cover: today FIRST, then the look-back
+// days, most recent first.
+//
+// WHY look back at all: the cycle used to process todayIST() and nothing else,
+// so at midnight IST it moved to the new date and never looked at the old one
+// again. Orders still unpacked for the previous day were abandoned silently (19
+// were lost that way in August 2026), and the reconcile pass could not rescue
+// them either, because it only scans the date being processed.
+export function processingDates({ lookbackDays = LOOKBACK_DAYS, now = new Date() } = {}) {
+  const out = [];
+  for (let i = 0; i <= Math.max(0, lookbackDays); i++) {
+    const d = istDateDaysAgo(i, now);
+    if (!out.includes(d)) out.push(d);
+  }
+  return out;
 }
 
 export function resolveChannel(name) {
@@ -80,6 +111,63 @@ export function resolveChannel(name) {
 
 // Label printer resolution used in the captured generate-shiplabel calls.
 export const SHIP_LABEL_RESOLUTION = 300;
+
+// --- Reliability tunables --------------------------------------------------
+
+// How many days back a cycle looks, in addition to today (see processingDates).
+export const LOOKBACK_DAYS = 2;
+
+// Look-back dates are re-checked at most this often, rather than on every
+// 15-minute cycle: today is what matters minute to minute, and each extra date
+// costs a pick-task query plus a validate call per channel. Hourly still
+// notices an abandoned day quickly — the orders lost in August sat for days.
+export const LOOKBACK_EVERY_MS = 60 * 60 * 1000;
+
+// Hard per-order failures allowed before an order is PARKED: taken out of the
+// retry loop and surfaced for manual attention.
+//
+// WHY: there was no cap at all. A failing order was retried every 15 minutes
+// forever — one reached 96 attempts, and 867 doomed attempts were logged on one
+// account in nine days. SmartHub eventually hard-blocks such an order with
+// "FORBIDDEN_REQUEST: Maximum number of retry reached", which no amount of
+// further retrying can undo, so the retrying itself is what breaks the order.
+// 5 is deliberately generous, and only HARD failures count (see below), so a
+// network blip or a not-yet-ready label never pushes an order toward parking.
+export const MAX_ORDER_ATTEMPTS = 5;
+
+// Error text meaning "try again later" rather than "this order is broken".
+// Matched case-insensitively against the error detail. These still bump an
+// order's visible attempt count, but never count toward MAX_ORDER_ATTEMPTS.
+//
+// NOTE: LYCS_INVALID_INPUT is deliberately NOT in this list. Its message says
+// "Please retry generating shiplabel and invoice", but in practice it is a real
+// rejection — the same order failed 96 times. Treating it as transient would
+// defeat the cap entirely.
+export const TRANSIENT_ERROR_PATTERNS = [
+  "LABEL_NOT_READY",
+  "THROTTL",
+  "TOO_MANY_REQUESTS",
+  "SERVICE_UNAVAILABLE",
+  "INTERNAL_SERVER_ERROR",
+  "TIMEOUT",
+  "TIMED_OUT",
+  "ECONNRESET",
+  "SOCKET HANG UP",
+  "HTTP 429",
+  "HTTP 500",
+  "HTTP 502",
+  "HTTP 503",
+  "HTTP 504",
+];
+
+export function isTransientError(detail) {
+  const s = String(detail || "").toUpperCase();
+  return TRANSIENT_ERROR_PATTERNS.some((p) => s.includes(p));
+}
+
+// How many days of daily state.json backups and agent log files to keep.
+export const BACKUP_RETENTION_DAYS = 14;
+export const LOG_RETENTION_DAYS = 14;
 
 // Fixed package used for ALL orders on every channel (per business decision).
 // The validate endpoint's per-order recommended dims are ignored in favor of this.

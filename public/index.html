@@ -24,6 +24,23 @@
   .loginalert button { background: #e74c3c; color: #fff; border: none; border-radius: 8px;
                        padding: 0.6rem 1.1rem; font-size: 0.9rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
 
+  /* Needs attention: orders the agent has given up retrying on its own. Amber,
+     not red — nothing is broken, but these parcels will not ship until someone
+     acts, so the panel only exists when there is something in it. */
+  .attention { display: none; padding: 0.85rem 1rem; border-radius: 12px; margin-bottom: 1rem;
+               background: #f39c1222; border: 1px solid #f39c1288; }
+  .attention.show { display: block; }
+  .attention .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 0.5rem; }
+  .attention .head strong { color: #f39c12; }
+  .attention .why { font-size: 0.8rem; color: #aaa; margin: 0 0 0.6rem; }
+  .exc { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+         padding: 0.45rem 0; border-top: 1px solid #8882; font-size: 0.82rem; }
+  .exc .meta { color: #999; font-size: 0.76rem; }
+  .exc .reason { color: #e67e22; word-break: break-word; }
+  .attention button { background: #f39c12; color: #2b1a00; border: none; border-radius: 8px;
+                      padding: 0.4rem 0.8rem; font-size: 0.8rem; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .attention button.ghost { background: transparent; border: 1px solid #f39c1288; color: #f39c12; }
+
   .herorow { display: flex; gap: 10px; align-items: stretch; margin-bottom: 0.75rem; }
   .herorow .hero { flex: 1; margin-bottom: 0; }
   .squarebtn { flex: 0 0 88px; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -87,6 +104,27 @@
       <div id="login-alert-text" style="font-size:0.85rem; margin-top:2px;"></div>
     </div>
     <button id="btn-login-alert">Log in now</button>
+  </div>
+
+  <!-- Shown when state.json could not be read. Nothing is labelled or printed
+       while this is up, so it must be the loudest thing on the page. -->
+  <div class="loginalert" id="state-alert">
+    <div>
+      <strong>Processing stopped — state file unreadable</strong>
+      <div id="state-alert-text" style="font-size:0.85rem; margin-top:2px;"></div>
+    </div>
+  </div>
+
+  <div class="attention" id="attention">
+    <div class="head">
+      <strong id="attention-title">Needs attention</strong>
+      <button class="ghost" id="btn-retry-all">Retry all</button>
+    </div>
+    <p class="why">
+      These orders failed several times, so the agent stopped retrying them and moved on.
+      Fix the cause in SmartHub if needed, then press Retry.
+    </p>
+    <div id="attention-list"></div>
   </div>
 
   <div class="herorow">
@@ -300,6 +338,21 @@ async function refreshStatus() {
       alertEl.classList.remove("show");
     }
 
+    // Unreadable state file: nothing works until a human restores a backup, so
+    // say exactly that and give the shell command-free instructions from the server.
+    const stateEl = $("state-alert");
+    if (j.health && j.health.ok === false) {
+      $("state-alert-text").textContent = `${j.health.reason}. ${j.health.hint || ""}`;
+      stateEl.classList.add("show");
+    } else {
+      stateEl.classList.remove("show");
+    }
+
+    // Only fetch the exception details when the cheap counter says there are any.
+    const failing = (j.exceptions && j.exceptions.failing) || 0;
+    if (failing > 0) refreshExceptions();
+    else $("attention").classList.remove("show");
+
     // Combined status across this machine + peers.
     renderDash([{ name: selfLabel, rows: j.lastSummary }, ...peers.map((p) => ({ name: p.name, rows: p.summary }))]);
 
@@ -325,6 +378,62 @@ async function refreshStatus() {
     $("status").textContent = "Could not reach server.";
   }
 }
+
+// --- Needs attention panel -------------------------------------------------
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+  );
+}
+
+async function refreshExceptions() {
+  try {
+    const r = await fetch("/api/exceptions");
+    const j = await r.json();
+    const all = j.failures || [];
+    // Parked orders first: those are the ones that have actually stopped.
+    const parked = all.filter((f) => f.parked);
+    const retrying = all.filter((f) => !f.parked);
+    const ordered = [...parked, ...retrying];
+    if (!ordered.length) {
+      $("attention").classList.remove("show");
+      return;
+    }
+
+    $("attention-title").textContent = parked.length
+      ? `Needs attention — ${parked.length} order(s) stopped`
+      : `Retrying — ${retrying.length} order(s) having trouble`;
+
+    $("attention-list").innerHTML = ordered
+      .map((f) => {
+        const id = esc(f.customerShipmentId);
+        const tries = f.parked
+          ? `stopped after ${f.hardAttempts} attempts`
+          : `attempt ${f.hardAttempts || 0}/${j.maxAttempts}${f.transient ? " (waiting it out)" : ""}`;
+        return (
+          '<div class="exc"><div>' +
+          `<div><strong>${esc(f.orderId || "(no order id)")}</strong> <span class="meta">${esc(f.channel || "")} · ship ${esc(f.date || "?")}</span></div>` +
+          `<div class="reason">${esc(f.reason)}</div>` +
+          `<div class="meta">${esc(tries)} · last ${f.lastAt ? new Date(f.lastAt).toLocaleTimeString() : "?"}</div>` +
+          `</div><button data-retry="${id}">Retry</button></div>`
+        );
+      })
+      .join("");
+
+    $("attention-list")
+      .querySelectorAll("button[data-retry]")
+      .forEach((b) => {
+        b.onclick = () => post("/api/exceptions/retry", { body: { customerShipmentId: b.dataset.retry } });
+      });
+
+    $("attention").classList.add("show");
+  } catch {
+    // A failed poll must never blank the panel — leave whatever is on screen.
+  }
+}
+
+$("btn-retry-all").onclick = () => post("/api/exceptions/retry", { body: { all: true } });
 
 let lastLogLines = [];
 let logBaseline = 0;

@@ -17,12 +17,17 @@ Solved by `src/queue.js`: the web server's single-worker job queue serializes
 the internal 15-min cycle and every manual button/peer action — no more
 Task-Scheduler-vs-manual-run race.
 
-### 0.2 Per-order failure isolation + exceptions queue — ⚠️ PARTIAL · M · ●●●
-`pipeline.js` now processes in **batches** (isolated try/catch per batch) and
-only records an order LABELED if a real tracking ID came back — failures are
-logged (`store.audit`) and left `BOUND` to retry next cycle. **Still missing:**
-a dedicated exceptions view/list surfacing "orders that keep failing" for
-manual attention (they currently just retry forever, silently, in the log).
+### 0.2 Per-order failure isolation + exceptions queue — ✅ DONE · M · ●●●
+`pipeline.js` processes in **batches** (isolated try/catch per batch) and only
+records an order LABELED if a real tracking ID came back. Every failure now also
+goes through `noteFailure()`, which stores the reason and the attempt count in
+`state.json`, **logs it** so it appears in the Activity Log, and parks the order
+after `MAX_ORDER_ATTEMPTS` = 5 **hard** failures. Parked orders are skipped by
+later cycles instead of retried forever.
+
+Surfaced in four places: the amber "Needs attention" panel on the control page
+(with per-order Retry and Retry all), `GET /api/exceptions`,
+`node index.js exceptions`, and a one-time email per newly parked order.
 
 ### 0.3 Packed cross-check — ✅ DONE (superseded by 0.4) · S · ●●
 The reconciliation pass (0.4) subsumes this — it scans
@@ -35,19 +40,55 @@ timeouts that actually succeeded server-side, and manual/other-machine
 processing).
 
 ### 0.5 Retry with backoff for transient errors — ⚠️ PARTIAL · S · ●●
-Session-expiry has auto-retry-once (`_withAuthRetry` in `api.js`) and API
-calls use a generous 120s timeout. **Still missing:** general bounded
-retry-with-backoff for transient 5xx/503 on individual calls (a 503 currently
-just fails that batch and waits for the next 15-min cycle — acceptable but
-not ideal).
+Session-expiry has auto-retry-once (`_withAuthRetry` in `api.js`) and API calls
+use a generous 120s timeout. Transient failures are now **classified** rather
+than retried blindly: `TRANSIENT_ERROR_PATTERNS` in `config.js` covers 5xx,
+throttling, timeouts, socket resets and `LABEL_NOT_READY`, and such a failure is
+recorded and retried next cycle without ever counting toward the park cap.
+
+**Still missing:** in-cycle retry with backoff. A 503 still fails that batch and
+waits for the next 15-minute cycle. That is now a *latency* issue rather than a
+correctness one, since the order can no longer be parked for it.
 
 ### 0.6 Global safety cap — ❌ NOT DONE · S · ●●
 No `maxOrdersPerRun` kill-switch yet. Still a real gap — a bug or bad date
 could still trigger mass processing in one cycle.
 
-### 0.7 Validate label PDF before marking printed — ❌ NOT DONE · S · ●
-No explicit `%PDF` header / non-empty check before `markPrinted`. Low risk in
-practice (downloads have been reliable) but still open.
+### 0.7 Validate label PDF before marking printed — ⚠️ PARTIAL · S · ●
+Still no explicit `%PDF` header / non-empty check on the downloaded bytes. What
+*is* checked now is the more dangerous half: SmartHub's combined-document
+response says which orders it actually included, and `splitByIncluded()` in
+`print.js` marks only those. An order we asked for but did not get is logged,
+audited as `print-missing`, and left unprinted for the next press.
+
+### 0.8 Look-back window (midnight rollover) — ✅ DONE · S · ●●●
+A cycle used to process `todayIST()` only, so at midnight IST the previous day's
+unpacked orders were abandoned — 19 were lost that way in August 2026.
+`datesForThisCycle()` in `scheduler.js` now covers today every cycle plus the
+two previous days once an hour (`LOOKBACK_DAYS`, `LOOKBACK_EVERY_MS`). Hourly
+rather than every cycle because each extra date costs a pick-task query plus a
+validate call per channel.
+
+### 0.9 Corrupt-state quarantine + daily backups — ✅ DONE · S · ●●●
+An unreadable `state.json` used to read as "nothing processed", which would
+relabel and reprint everything. The store now renames the bad file to
+`state.corrupt-<timestamp>.json`, goes **degraded**, and refuses every live
+action with a message naming the newest usable backup. `backupDaily()` keeps 14
+daily copies in `data/backups/`, and the hub pulls the peer's copy into
+`data/peer-backups/`.
+
+Restoring is deliberately manual: an automatic restore of a day-old backup would
+mark recently printed orders unprinted and label them a second time. **Still
+open:** an off-site copy. Both current copies sit in the same building.
+
+### 0.10 Confirm the peer's print before marking it printed — ✅ DONE · S · ●●
+The peer used to mark its labels printed the moment it handed them to the hub,
+so a failed merge lost them: marked printed, never in any PDF. The peer now
+holds the batch pending (30-minute TTL) and the hub calls
+`POST /api/peer/confirm-print` only after every merged file is written. An
+unconfirmed batch stays unprinted, which risks a duplicate print rather than a
+missing one. A peer on older code returns no `batchId`, gets no confirmation,
+and behaves exactly as before.
 
 ---
 
@@ -79,15 +120,24 @@ pull of already-**printed**-but-now-cancelled orders out of a batch (the
 Telegram is banned in India — built email alerting instead (`src/notify.js`,
 Gmail SMTP). Fires once when the session dies, once on recovery.
 
-### 2.2 Heartbeat / dead-scheduler detection — ❌ NOT DONE · S · ●●●
-`lastCycleAt` is tracked and shown on the control page, but nothing actively
-alerts if it goes stale (PC asleep, server crashed, scheduler silently
-stopped). Still a real gap for unattended overnight operation.
+### 2.2 Heartbeat / dead-scheduler detection — ✅ DONE · S · ●●●
+`src/heartbeat.js` watches `lastCycleAt` and the peers the hub already polls,
+and emails once when processing goes stale (45 min) and once on recovery.
+**Known gap, documented in the file:** a machine cannot report its own total
+death — if the hub is powered off, nothing emails. Closing that needs an
+external watcher on a third always-on machine.
 
-### 2.3 Log rotation + structured logs — mostly moot · S · ●
-The old file-based `auto.log` is superseded by the in-memory ring buffer
-(`src/log.js`, capped at 500 lines) feeding the web control page. No
-unbounded file growth risk anymore.
+### 2.3 Log rotation + structured logs — ✅ DONE (rotation) · S · ●
+`src/log.js` writes every line to three sinks: the console, the 500-line ring
+buffer the control page reads, and `data/logs/agent-YYYY-MM-DD.log` — one file
+per IST day, pruned to 14 days. The file sink disables itself with a single
+warning if the directory cannot be written, so a full disk degrades logging
+instead of stopping the agent.
+
+The ring buffer alone was not enough in practice: it holds roughly a few hours
+of a busy day, so anything that happened overnight had already scrolled away by
+the time somebody looked. **Structured (JSON) logs are still not done**, and
+there is no pressure for them while the files are read by eye.
 
 ### 2.4 Daily summary report — ❌ NOT DONE · M · ●
 "Show Status" is on-demand only; no scheduled end-of-day email/report.
@@ -170,9 +220,11 @@ No automated test suite. Verification throughout has been manual (dry-runs,
 ---
 
 ## What's actually left, in priority order
-1. **1.1 Special order flags** — the single highest real-money/SLA risk still open (fast-track/gift/hazmat/serial-number orders get blind-packed like everything else).
-2. **2.2 Heartbeat / dead-scheduler detection** — nothing currently notices if the scheduler silently stops (PC sleep, crash).
-3. **0.6 Global safety cap** — no kill-switch against a runaway mass-processing bug.
-4. **1.4 "Printed Cancelled"** — surfacing printed-but-now-cancelled orders before handover (API is ready, feature isn't built).
-5. **4.1 Returns/RTO module** — fully designed, zero code (the anti-theft scan-reconciliation feature).
-6. Everything else in Tiers 4–6 (inventory, analytics, SQLite, tests, installer) — lower urgency, no immediate pain driving them.
+1. **1.1 Special order flags** — the single highest real-money/SLA risk still open (fast-track/gift/hazmat/serial-number orders get blind-packed like everything else). Measure how common they are first.
+2. **0.6 Global safety cap** — no kill-switch against a runaway mass-processing bug.
+3. **Off-site backup copy (0.9)** — daily backups exist, but both copies are in the same building.
+4. **Cutoff warnings** — the cutoff times have been sitting unused in `config.js` since the start; nothing warns before a handover deadline (`RISKS.md` §D).
+5. **1.4 "Printed Cancelled"** — surfacing printed-but-now-cancelled orders before handover (API is ready, feature isn't built).
+6. **4.1 Returns/RTO module** — fully designed, zero code (the anti-theft scan-reconciliation feature).
+7. **6.4 Tests** — the pure logic is now separable (`datesForThisCycle`, `splitByIncluded`, the store's failure accounting), so this got cheaper. There is still no runner.
+8. Everything else in Tiers 4–6 (inventory, analytics, SQLite, installer) — lower urgency, no immediate pain driving them.

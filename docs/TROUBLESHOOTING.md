@@ -20,6 +20,8 @@ Each entry: **what you see → what it means → how to fix it.**
 | Orders from a previous day never shipped | [B3](#b3-yesterdays-orders-were-never-processed) |
 | Marketplace says label ready, SmartHub doesn't | [B4](#b4-marketplace-shows-label-downloaded-but-smarthub-isnt-packed) |
 | "0 labelled successfully" with no reason | [B5](#b5-0-labelled-successfully-but-no-error-shown) |
+| An order is parked / "Needs attention" | [B8](#b8-an-order-is-parked--needs-attention) |
+| Red banner: state file unreadable | [B9](#b9-state-file-degraded--the-agent-refuses-to-run) |
 | Labels won't print / nothing in the PDF | [C1](#c1-no-labels-to-print) |
 | Only one account's labels printed | [C2](#c2-combined-print-missing-the-other-machine) |
 | Peer shows offline / unreachable | [D1](#d1-peer-shows-offline-or-unreachable) |
@@ -56,7 +58,16 @@ cd C:\Automation\auto_order_processor && node server.js
 every 15 minutes, on the quarter hour (:00 / :15 / :30 / :45). Nothing for 45+
 minutes means the watchdog should have emailed you.
 
-**4. Was it started with the scheduler disabled?** `AGENT_NO_SCHEDULE=1` starts the
+**4. Is the state file readable?** A red banner about the state file means the
+agent has stopped on purpose — see
+[B9](#b9-state-file-degraded--the-agent-refuses-to-run). Cycles log
+`Cycle stopped — store-degraded` in this case.
+
+**5. Are the orders parked?** If cycles are running and finding nothing, check the
+amber "Needs attention" panel. Parked orders are skipped on purpose until
+retried — [B8](#b8-an-order-is-parked--needs-attention).
+
+**6. Was it started with the scheduler disabled?** `AGENT_NO_SCHEDULE=1` starts the
 page **without** automatic processing. Restart without it.
 
 ## A2. Amazon login expired
@@ -136,34 +147,37 @@ were logged in nine days.
 **Fix:** process those orders **manually in SmartHub**, then fix the underlying
 failure ([B1](#b1-lycs_invalid_input--pack-keeps-failing)) so the loop stops.
 
-> **Prevention is still unbuilt.** An attempt cap (~5 tries, then park the order
-> and alert) is the single most valuable pending change. See `RISKS.md` §C.
+> **Prevention is now built.** An order is parked after **5 hard failures** and
+> is not retried again until somebody presses Retry, so the loop can no longer
+> run an order into a hard block. Transient errors (503, throttling,
+> `LABEL_NOT_READY`) do not count toward the cap. If you still see this message,
+> it is from an order blocked *before* the cap existed, or one retried manually
+> too many times. See [B8](#b8-an-order-is-parked--needs-attention).
 
 ## B3. Yesterday's orders were never processed
 
 **You see:** the marketplace shows orders from a previous day still unprocessed,
 while our logs show nothing wrong.
 
-**Means:** **the midnight rollover abandoned them.** The cycle processes
-`todayIST()` only. At midnight IST it switches to the new date and *never looks
-back*. Anything still unprocessed for the old date becomes invisible — the tool
-will never attempt it again.
+**This used to be the midnight rollover**, and it was the single biggest source
+of silently lost orders — 19 in August 2026. The cycle processed `todayIST()`
+only, so at midnight IST it switched to the new date and never looked back.
 
-This has three knock-on effects:
+**Fixed.** Every cycle processes today, and once an hour it also processes the
+**two previous days**. Reconciliation runs for each of those dates too, so an
+order you packed manually yesterday is picked up and becomes printable.
 
-- Unprocessed orders are abandoned
-- Reconciliation won't rescue them either (it only scans the current date)
-- Even if you **manually pack** one later, the tool won't notice or print it
+**If orders from a previous day are still unprocessed, the cause is now one of:**
 
-**Fix now:** handle them manually in SmartHub, and **download those labels
-manually too** — the tool won't fetch them.
+| Cause | How to tell | Fix |
+|---|---|---|
+| **Older than the look-back window** (3+ days) | Ship date is older than two days | Handle in SmartHub manually, including the label download |
+| **Parked after repeated failures** | It is listed in "Needs attention" on the page | Fix the cause, then Retry — see [B8](#b8-an-order-is-parked--needs-attention) |
+| **The agent was not running** | Gap in `data/logs/agent-*.log` | Start it; the next cycle catches up within the window |
+| **State file degraded** | Red banner on the page | See [B9](#b9-state-file-degraded--the-agent-refuses-to-run) |
 
-**Useful trick:** if you manually pack an order **on its own ship date**, the next
-cycle reconciles it automatically and it becomes printable. Do it the next day and
-you must download the label yourself.
-
-> **Prevention is unbuilt.** A look-back window (process today plus the previous
-> 1–2 days) would close all three effects. 19 orders were lost this way in August.
+To confirm the look-back is actually running, watch the Activity Log for one
+cycle: today's date appears every time, the earlier dates about once an hour.
 
 ## B4. Marketplace shows "label downloaded" but SmartHub isn't packed
 
@@ -188,18 +202,33 @@ you see duplicates.
 
 …and nothing explaining why.
 
-**Means:** a **known observability gap**, not a separate bug. Pack and label
-failures are written to the `state.json` audit trail, but only a summary line
-reaches the log you can see.
+**Means:** you are looking at an old log. Pack and label failures now print the
+reason on the line after the summary, like this:
 
-**To get the real reason:**
+```
+[meesho] pack failed for 408-1234567 [CS-9001]: LYCS_INVALID_INPUT ... (attempt 2/5)
+```
+
+If the reason is still missing, the failure happened before this was added, or
+the whole batch threw before any per-order error came back — in which case the
+batch-level error is logged instead.
+
+**To read the stored reasons for any order:**
+
+```bash
+node index.js exceptions
+```
+
+That lists every failing order with its reason and attempt count, parked ones
+first. **For the raw audit trail:**
 
 ```bash
 node -e "const s=require('./data/state.json');console.log(s.audit.filter(a=>a.action==='pack-failed'||a.action==='label-failed').slice(-20).map(a=>a.ts+' '+a.channel+' '+a.action+' | '+(a.detail||'')).join('\n'))"
 ```
 
-> Fixing this properly means logging the error detail in `src/pipeline.js`
-> (`processBatch`), where `store.audit(..., "pack-failed", ...)` is called.
+> The reason text comes from `errorText()` in `src/pipeline.js`, which flattens
+> SmartHub's error payloads — they arrive as a string, an array of strings, or an
+> object with a `message`, depending on the endpoint.
 
 ## B6. `LABEL_NOT_READY`
 
@@ -211,6 +240,78 @@ unless it persists for hours.
 
 **Means:** too many shipments in one request. Already mitigated by batching
 (`BATCH_SIZE = 15` in `src/pipeline.js`). If it returns, lower that number.
+
+It is also classified as **transient**, so a 503 never pushes an order toward
+being parked.
+
+## B8. An order is parked / "Needs attention"
+
+**You see:** an amber panel on the control page headed *"N order(s) having
+trouble"*, or an email saying an order has been parked.
+
+**Means:** that order failed **5 times for a real reason** — not a network blip —
+so the agent stopped retrying it. This is deliberate. Retrying forever is what
+got orders permanently blocked by SmartHub ([B2](#b2-forbidden_request--maximum-number-of-retry-reached)).
+
+**A parked order will not ship until somebody acts.** That is the trade: a
+visible stop instead of a silent loop.
+
+**What to do:**
+
+1. **Read the reason** in the panel, or run `node index.js exceptions`.
+2. **Fix the cause.** Most parked orders are
+   [B1](#b1-lycs_invalid_input--pack-keeps-failing) — the weight or box values
+   the marketplace rejected.
+3. **Retry it** — the button on the row, or:
+
+```bash
+node index.js retry --order <customerShipmentId>
+```
+
+4. **Or handle it manually in SmartHub.** If you do, the next cycle reconciles it
+   and it becomes printable, as long as its ship date is still inside the
+   look-back window.
+
+Retry clears the failure record completely, so the order gets a fresh set of
+attempts. Retrying without fixing the cause just parks it again 5 cycles later.
+
+**"waiting" vs "retry" vs "PARKED"** in the CLI listing: *waiting* is a
+transient error that will be retried on its own, *retry* is a hard failure still
+under the cap, *PARKED* has stopped.
+
+## B9. State file degraded / the agent refuses to run
+
+**You see:** a red banner on the control page saying the state file is unreadable,
+and every action returning *"Stopped: store-degraded"* or a 503.
+
+**Means:** `data\state.json` could not be read or parsed. The agent has renamed
+it to `data\state.corrupt-<timestamp>.json` and **deliberately stopped**.
+
+**Why it stops instead of carrying on:** that file is the only record of what has
+already been labelled and printed. An unreadable file looks exactly like "nothing
+has been processed", so continuing would relabel and reprint the entire day,
+booking a second courier pickup for every parcel.
+
+**Recovery — do this in order:**
+
+1. **Stop the agent** on this machine.
+2. **Find the newest backup.** The banner names it. Otherwise look in
+   `data\backups\` (14 daily copies), or `data\peer-backups\` for the copy the
+   other machine pushed.
+3. **Copy it over `data\state.json`.**
+4. **Check SmartHub before restarting.** A backup can be up to a day old, so
+   orders labelled after it was taken will look unprocessed. Anything already
+   `BOUND` in SmartHub is re-adopted by the reconciliation pass, but check the
+   printed queue against what staff actually have in hand.
+5. **Restart the agent** and watch one full cycle.
+
+**Do not just delete the corrupt file.** An empty data directory reads as a first
+install, and everything reprints. The agent guards against this — it stays
+degraded if it sees a `state.corrupt-*` file with no `state.json` beside it — but
+restore a backup rather than relying on that.
+
+**Dry runs still work** while degraded (`node index.js run`, no `--live`), which
+is the safe way to see what the damage would have been.
 
 ---
 
@@ -442,10 +543,15 @@ Then restart the agent. If it persists, delete `profile\SingletonLock`.
 ## E4. Disk filling up
 
 `labels\` grows daily and is never cleaned. Archive or delete old `labels\<date>\`
-folders — they're only needed for reprints and disputes.
+folders — they're only needed for reprints and disputes. That is the only folder
+that grows without limit.
+
+`data\logs\`, `data\backups\` and `data\peer-backups\` prune themselves to 14
+days. Log files are a few hundred KB a day and the backups are small.
 
 **Never delete `data\state.json`** — it's the record of what's been printed.
-Deleting it makes **everything reprint**.
+Deleting it makes **everything reprint**. If it is already unreadable, restore a
+backup: [B9](#b9-state-file-degraded--the-agent-refuses-to-run).
 
 ---
 
@@ -468,6 +574,8 @@ Deleting it makes **everything reprint**.
 | Processing stopped | No cycle for 45+ minutes on this machine |
 | Peer unreachable | Hub can't reach a processor machine |
 | Peer not processing | Peer reachable but its cycles are stale |
+| Order parked | An order hit the 5-attempt cap. Once per order, with the reason — [B8](#b8-an-order-is-parked--needs-attention) |
+| State file unreadable | `state.json` was quarantined and the agent has stopped. Once per occurrence — [B9](#b9-state-file-degraded--the-agent-refuses-to-run) |
 
 ## F3. Something broke and nothing alerted me
 
@@ -487,7 +595,7 @@ Plausible, and worth recognising early:
 | Problem | Early sign | Prepare by |
 |---|---|---|
 | **SmartHub changes its API** | Everything fails at once after working fine, with our code unchanged | Capture a HAR of the manual flow and diff the payloads — how both the `pickupSlotId` and the weight issues were solved |
-| **`state.json` corrupted** | Server won't start; JSON parse error | Back it up — it contains **no customer PII**, so it's safe to copy to Drive |
+| ~~**`state.json` corrupted**~~ | Red banner, actions refused | **Handled** — quarantined automatically, with 14 daily backups locally and on the peer. See [B9](#b9-state-file-degraded--the-agent-refuses-to-run). Still worth an off-site copy: both current copies are in the same building |
 | **Clock drift** | TLS failures, Tailscale won't connect, wrong ship dates | `w32tm /resync`; keep automatic time on |
 | **Node / Playwright upgrade breaks it** | Worked yesterday, fails after an update | Pin versions; don't upgrade mid-season |
 | **Marketplace tightens validation again** | A slice of orders starts failing while the rest are fine | Same HAR-diff method as above |
@@ -515,6 +623,21 @@ node index.js login
 ```
 ```bash
 node index.js test-alert
+```
+```bash
+node index.js exceptions
+```
+```bash
+node index.js retry --order <customerShipmentId>
+```
+```bash
+node index.js retry --all
+```
+
+**Today's log file** (one per IST day, 14 kept):
+
+```bash
+tail -n 100 data/logs/agent-$(date +%F).log
 ```
 
 **Inspect state** (read-only):

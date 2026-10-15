@@ -93,6 +93,9 @@ deletes earlier ones, so any past batch can always be reopened and reprinted.
 ```
 node index.js status                 # local processing + print/audit summary
 node index.js run                    # all channels, today (IST), dry-run
+node index.js exceptions             # orders that keep failing, and why
+node index.js retry --order <csid>   # retry one failed/parked order next cycle
+node index.js retry --all            # retry all of them
 ```
 
 ## Web control server (replaces the .bat menu + Task Scheduler)
@@ -176,6 +179,54 @@ when it recovers:
 > hub itself dies, nothing emails you. Closing that fully needs an external
 > watcher (e.g. the always-on Ubuntu server).
 
+## When an order keeps failing
+
+A failing order is retried on the next cycle, with its reason shown in the
+Activity Log. After **5 failures for a real reason** it is **parked**: taken out
+of the retry loop and listed in the amber **Needs attention** panel on the
+control page, with a Retry button per order. One email is sent per newly parked
+order.
+
+Transient failures — throttling, 503s, timeouts, "label not ready" — are
+retried without ever counting toward that limit.
+
+This exists because unlimited retrying is actively harmful: SmartHub hard-blocks
+an order that has been retried too often (`Maximum number of retry reached`),
+and no amount of further retrying can undo it. A parked order is a visible stop
+instead of a silent loop. It will not ship until somebody acts on it.
+
+Details and recovery steps: `docs/TROUBLESHOOTING.md` §B8.
+
+## Missed days are caught automatically
+
+Every cycle processes today's orders. Once an hour it also re-checks the **two
+previous days**, so an order left unpacked overnight is no longer abandoned when
+the date rolls over at midnight IST. Anything packed manually in SmartHub within
+that window is picked up too, and becomes printable.
+
+## The state file is backed up, and protected
+
+`data\state.json` is the only record of what has already been labelled and
+printed. Two things guard it:
+
+- **A daily backup** in `data\backups\`, 14 kept, plus a copy pushed to the
+  other machine into `data\peer-backups\`.
+- **Quarantine on corruption.** If the file cannot be read or parsed, it is
+  renamed to `state.corrupt-<timestamp>.json`, a red banner appears, and the
+  agent **refuses to process or print** until a backup is restored.
+
+The refusal is deliberate. An unreadable state file looks identical to "nothing
+has been processed", so carrying on would relabel and reprint the whole day and
+book a second courier pickup for every parcel. Recovery is a file copy, and the
+banner names the backup to use. See `docs/TROUBLESHOOTING.md` §B9.
+
+## Logs
+
+Everything the control page shows is also written to `data\logs\agent-<date>.log`
+— one file per IST day, 14 days kept, pruned automatically. The page's Activity
+Log holds only the last 500 lines, so the files are what to read for anything
+that happened overnight.
+
 ## Email alerts (login expiry + failures)
 
 If the Amazon session expires, the processor emails you (once when it goes down, once
@@ -203,6 +254,10 @@ when restored) in addition to the Desktop alert + Windows notification.
   one real order, before trusting it on a full batch.
 - If your Amazon session expires mid-run, the tool **stops and tells you to re-login**
   rather than silently failing.
+- **Where a choice had to be made, the tool prefers a visible duplicate over a
+  silent non-shipment.** A parcel that prints twice is obvious and costs a label.
+  A parcel that never gets a label is invisible until the customer complains.
+- **Deploy both machines together.** The hub and the peer share a protocol.
 
 ## Channels
 
