@@ -23,7 +23,7 @@ import { runCycle, startScheduler } from "./src/scheduler.js";
 import { printNewLabels, reprintLast, printDayIST, openFile } from "./src/print.js";
 import { marketStatus, forecast } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
-import { todayIST, LABELS_DIR, DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS } from "./src/config.js";
+import { todayIST, LABELS_DIR, DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS, resolveChannel } from "./src/config.js";
 import { listPeers, sharedSecret, isHub, selfName } from "./src/peers.js";
 import { checkHeartbeat } from "./src/heartbeat.js";
 import { VERSION, versionLine } from "./src/version.js";
@@ -160,6 +160,60 @@ app.get("/api/status", (req, res) => {
 });
 
 // --- Exceptions: orders that failed repeatedly (item 2) ---------------------
+
+// Why is an order not being activated? Dumps the three things activation
+// actually looks at, raw and unfiltered, so the answer is visible instead of
+// inferred. Read-only.
+//
+// Added because "No new pick lists to activate" is true but useless: it does
+// not say whether SmartHub offered nothing, or offered something we filtered
+// out. Guessing at that cost 13 orders and most of a day.
+app.get("/api/activation-debug", async (req, res) => {
+  try {
+    const key = String(req.query.channel || "flipkart");
+    const ch = resolveChannel(key);
+    const out = await queue.run("activation-debug", async () => {
+      const client = await getClient();
+      const cpts = await client.getRecommendedCpts();
+      const windowsWithNew = (cpts || []).filter((c) => (c.newOrders || 0) > 0);
+      const pickupTimes = [...new Set(windowsWithNew.map((c) => c.startTime))];
+      const recommended = pickupTimes.length ? await client.getRecommendedLists(pickupTimes) : [];
+      let missed = [];
+      let missedCount = null;
+      try {
+        missed = (await client.getMissedLists()) || [];
+        missedCount = await client.getMissedCount();
+      } catch (e) {
+        missed = [{ error: e.message }];
+      }
+      // Say explicitly WHY each card was or was not taken, instead of leaving
+      // the reader to re-derive the filter.
+      const verdict = (c) => ({
+        expectedShipEpoch: c.expectedShipEpoch,
+        shipDate: c.expectedShipEpoch ? new Date(c.expectedShipEpoch * 1000).toISOString() : null,
+        numberOfOrders: c.numberOfOrders,
+        salesChannel: c?.displayableSalesChannel?.salesChannel,
+        pickTaskNotGenerated: c.pickTaskNotGenerated,
+        wouldActivate:
+          c?.displayableSalesChannel?.salesChannel === ch.salesChannel &&
+          !!c.pickTaskNotGenerated &&
+          (c.numberOfOrders || 0) > 0,
+      });
+      return {
+        channel: key,
+        salesChannel: ch.salesChannel,
+        cptsTotal: (cpts || []).length,
+        cptsWithNewOrders: windowsWithNew.map((c) => ({ startTime: c.startTime, newOrders: c.newOrders })),
+        recommended: (recommended || []).map(verdict),
+        missedCount,
+        missed: missed.map((c) => (c.error ? c : verdict(c))),
+      };
+    });
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.get("/api/exceptions", (req, res) => {
   try {
