@@ -144,16 +144,16 @@ failure ([B1](#b1-lycs_invalid_input--pack-keeps-failing)) so the loop stops.
 **You see:** the marketplace shows orders from a previous day still unprocessed,
 while our logs show nothing wrong.
 
-**Means:** **the midnight rollover abandoned them.** The cycle processes
-`todayIST()` only. At midnight IST it switches to the new date and *never looks
-back*. Anything still unprocessed for the old date becomes invisible — the tool
-will never attempt it again.
+**Means:** historically the midnight rollover abandoned them — the cycle
+processed `todayIST()` only and never looked back.
 
-This has three knock-on effects:
+**This is now fixed.** Each cycle processes **today plus the previous
+`LOOKBACK_DAYS`** (default 2, in `src/config.js`), oldest first. An order that
+missed its own ship date is still activated, packed, labelled and printed on a
+later day, and a manual pack on a previous day is reconciled as before.
 
-- Unprocessed orders are abandoned
-- Reconciliation won't rescue them either (it only scans the current date)
-- Even if you **manually pack** one later, the tool won't notice or print it
+If orders older than the look-back window are stuck, raise `LOOKBACK_DAYS` —
+each extra day adds one more pass per channel per cycle.
 
 **Fix now:** handle them manually in SmartHub, and **download those labels
 manually too** — the tool won't fetch them.
@@ -162,8 +162,7 @@ manually too** — the tool won't fetch them.
 cycle reconciles it automatically and it becomes printable. Do it the next day and
 you must download the label yourself.
 
-> **Prevention is unbuilt.** A look-back window (process today plus the previous
-> 1–2 days) would close all three effects. 19 orders were lost this way in August.
+> 19 orders were lost this way in August, before the look-back window existed.
 
 ## B4. Marketplace shows "label downloaded" but SmartHub isn't packed
 

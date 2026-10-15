@@ -3,7 +3,7 @@
 // exactly, but reuses the server's persistent client (src/agent.js) instead of
 // launching a fresh browser each time.
 
-import { CHANNELS, resolveChannel, todayIST } from "./config.js";
+import { CHANNELS, resolveChannel, recentDatesIST } from "./config.js";
 import { SessionExpiredError } from "./api.js";
 import { activateChannel } from "./activate.js";
 import { processChannel } from "./pipeline.js";
@@ -13,11 +13,15 @@ import { log } from "./log.js";
 import { getClient, checkSession } from "./agent.js";
 
 export async function runCycle({ date } = {}) {
-  const shipDate = date || todayIST();
+  // An explicit date (CLI, --date) processes only that day. The scheduler
+  // processes today PLUS the previous LOOKBACK_DAYS, oldest first, so anything
+  // that missed its own ship date still gets activated, packed, labelled and
+  // printed instead of being abandoned at the midnight rollover.
+  const dates = date ? [date] : recentDatesIST();
   const channels = Object.keys(CHANNELS).map(resolveChannel);
   const client = await getClient();
 
-  log.info(`Cycle start — ${shipDate} — channels: ${channels.map((c) => c.key).join(", ")}`);
+  log.info(`Cycle start — ${dates.join(", ")} — channels: ${channels.map((c) => c.key).join(", ")}`);
 
   // Use agent.js's checkSession (not client.checkSession directly) so the
   // cached session state — what the web page's status bar reads — actually
@@ -32,9 +36,13 @@ export async function runCycle({ date } = {}) {
   const results = [];
   for (const ch of channels) {
     try {
+      // Activation is date-agnostic — SmartHub decides which pick lists are
+      // outstanding — so it runs once per channel, not once per date.
       await activateChannel(client, { channel: ch, dryRun: false });
-      const r = await processChannel(client, { channel: ch, date: shipDate, dryRun: false, limit: Infinity });
-      results.push(r);
+      for (const d of dates) {
+        const r = await processChannel(client, { channel: ch, date: d, dryRun: false, limit: Infinity });
+        results.push(r);
+      }
     } catch (e) {
       if (e instanceof SessionExpiredError) {
         await raiseSessionAlert(e.message);

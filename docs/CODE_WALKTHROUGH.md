@@ -260,11 +260,16 @@ Re-arms with `setTimeout` after each run (not `setInterval`), so it lands on
 :00/:15/:30/:45 and can't drift. It also runs once immediately on startup.
 
 ```js
-const shipDate = date || todayIST();   // ← the midnight-rollover gap
+const dates = date ? [date] : recentDatesIST();   // today + LOOKBACK_DAYS
 ```
 
-**That one line is the cause of abandoned previous-day orders.** Making it a
-*list* of dates (today plus the last day or two) is the look-back fix.
+Each cycle processes **today plus the previous `LOOKBACK_DAYS`** (default 2),
+oldest first, so an order that missed its own ship date is still picked up
+instead of abandoned at the midnight rollover. An explicit `--date` on the CLI
+still processes only that one day.
+
+Activation runs **once per channel**, not once per date — SmartHub decides which
+pick lists are outstanding, so asking per-date would repeat the same call.
 
 ### `server.js`
 
@@ -355,7 +360,7 @@ These are *missing*, not broken — don't be surprised by them:
 | Gap | Effect | Fix |
 |---|---|---|
 | **No attempt limit** | Failing orders retry forever until SmartHub blocks them | `RISKS.md` §C |
-| **Today-only processing** | Previous-day orders abandoned at midnight | Look-back window |
+| ~~Today-only processing~~ | ✅ Fixed — cycles cover today + `LOOKBACK_DAYS` (`src/config.js`) | — |
 | **Errors not logged** | Failures invisible on the page | Add `log.warn` beside `store.audit` in `pipeline.js` |
 | **Cutoffs unused** | No warning before a deadline | `RISKS.md` §D |
 | **No external watcher** | If the hub itself dies, nothing alerts | Needs the always-on third machine |

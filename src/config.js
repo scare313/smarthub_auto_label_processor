@@ -83,6 +83,27 @@ export const SHIP_LABEL_RESOLUTION = 300;
 
 // Fixed package used for ALL orders on every channel (per business decision).
 // The validate endpoint's per-order recommended dims are ignored in favor of this.
+// How many PREVIOUS days each cycle also processes, on top of today.
+// Orders can miss their own ship date for many reasons — a late pick list, a
+// pack failure that later clears, a stalled agent, a marketplace hiccup. Before
+// this existed the date rolled over at midnight IST and those orders were
+// abandoned permanently: never retried, never reconciled, never printed.
+// 2 means each cycle works on today plus the two days before it.
+export const LOOKBACK_DAYS = 2;
+
+// [oldest ... today] in IST, inclusive. Processing walks these in order so the
+// oldest (most urgent, closest to breaching) is handled first.
+export function recentDatesIST(lookback = LOOKBACK_DAYS) {
+  const today = todayIST();
+  const out = [];
+  for (let i = lookback; i >= 0; i--) {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+
 export const DEFAULT_PACKAGE = {
   boxName: "CustomBox",
   length: { measure: 15, unitOfMeasure: "CM" },
