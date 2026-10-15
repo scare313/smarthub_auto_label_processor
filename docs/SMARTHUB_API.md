@@ -390,6 +390,32 @@
 ]
 ```
 
+#### `GET /api/pick/lists/recommended` — the `createPickListCardType` parameter
+
+⚠️ **Three card types, and they do NOT overlap.** Each returns a different set
+of pickup windows, so asking for one means never seeing the others:
+
+| `createPickListCardType` | Returns |
+|---|---|
+| `RECOMMENDED` | the window open **right now** — what the portal requests |
+| `UPCOMING` | windows still **ahead** |
+| *(none — use `/pick/lists/missed`)* | windows already **passed** |
+
+We asked only for `UPCOMING`, so future days activated correctly while **today's
+orders never did**. The card existed and the portal displayed it; we simply
+never requested the type that returns it. Captured from `Todays_Order.har`:
+
+```
+GET /api/pick/lists/recommended?pickupTimes[0]=1792045800&...&createPickListCardType=RECOMMENDED
+
+[{ "expectedShipEpoch": 1792045800, "numberOfOrders": 1,
+   "pickTaskNotGenerated": true,
+   "displayableSalesChannel": { "salesChannel": "FKSTANDARD" } }]
+```
+
+`src/activate.js` requests **both** types and merges, with the missed endpoint
+covering the third case. All three are needed for full coverage.
+
 #### `POST /api/pick/list` — the `includeOnlyInRecommendedSlots` field
 
 Creates (activates) a pick list. The UI's equivalent is the GraphQL mutation

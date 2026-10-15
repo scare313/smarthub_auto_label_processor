@@ -256,11 +256,22 @@ export class SmartHubClient {
   // Recommended pick-list cards for the given pickup-time windows (epoch seconds).
   // Each card: { expectedShipEpoch, numberOfOrders, pickTaskNotGenerated,
   //              displayableSalesChannel: { salesChannel, isSelfShip } }
-  async getRecommendedLists(pickupTimes) {
+  // `createPickListCardType` decides WHICH windows come back, and the three
+  // values do not overlap:
+  //
+  //   RECOMMENDED - the window open right now  (what the portal requests)
+  //   UPCOMING    - windows still ahead
+  //   (missed)    - windows already passed, via /pick/lists/missed
+  //
+  // We asked only for UPCOMING, so future days activated fine and TODAY never
+  // did: the card existed, the portal showed it, we simply never requested the
+  // type that returns it. Callers should ask for both and merge - see
+  // activate.js - otherwise either today or the days ahead go unactivated.
+  async getRecommendedLists(pickupTimes, cardType = "RECOMMENDED") {
     const qs = pickupTimes.map((t, i) => `pickupTimes[${i}]=${t}`).join("&");
     return this._getJson(
-      `/api/pick/lists/recommended?${qs}&createPickListCardType=UPCOMING`,
-      "getRecommendedLists"
+      `/api/pick/lists/recommended?${qs}&createPickListCardType=${encodeURIComponent(cardType)}`,
+      `getRecommendedLists(${cardType})`
     );
   }
 

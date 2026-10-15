@@ -24,11 +24,21 @@ export async function activateChannel(client, { channel, dryRun }) {
   const windowsWithNew = cpts.filter((c) => (c.newOrders || 0) > 0);
   const pickupTimes = [...new Set(windowsWithNew.map((c) => c.startTime))];
 
-  // 2a. Recommended pick-list cards for those windows, for this channel.
+  // 2a. Pick-list cards for those windows. BOTH card types are needed: they
+  //      return different windows and do not overlap. RECOMMENDED is the window
+  //      open right now, UPCOMING is the days ahead. Asking only for UPCOMING
+  //      is why today's orders were never activated while future ones were.
   let upcoming = [];
   if (pickupTimes.length) {
-    const cards = await client.getRecommendedLists(pickupTimes);
-    upcoming = cards.filter(mineFor(channel));
+    for (const cardType of ["RECOMMENDED", "UPCOMING"]) {
+      try {
+        const cards = (await client.getRecommendedLists(pickupTimes, cardType)) || [];
+        upcoming.push(...cards.filter(mineFor(channel)));
+      } catch (e) {
+        // One card type failing must not cost us the other.
+        log.warn(`[${channel.key}] ${cardType} pick-list lookup failed: ${e.message}`);
+      }
+    }
   }
 
   // 2b. MISSED pick lists — windows already past, still not picked. Same card
