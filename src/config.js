@@ -71,31 +71,27 @@ const IST_DATE = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
 // Today's date in IST (Asia/Kolkata), formatted YYYY-MM-DD.
 export function todayIST() {
   return IST_DATE.format(new Date());
 }
 
-// The IST calendar date `daysAgo` days before now, formatted YYYY-MM-DD.
-export function istDateDaysAgo(daysAgo, now = new Date()) {
-  return IST_DATE.format(new Date(now.getTime() - Math.max(0, daysAgo) * DAY_MS));
-}
-
-// Ship dates one processing cycle should cover: today FIRST, then the look-back
-// days, most recent first.
+// [oldest ... today] in IST, inclusive. Processing walks these in order so the
+// oldest (most urgent, closest to breaching) is handled first.
 //
 // WHY look back at all: the cycle used to process todayIST() and nothing else,
 // so at midnight IST it moved to the new date and never looked at the old one
-// again. Orders still unpacked for the previous day were abandoned silently (19
-// were lost that way in August 2026), and the reconcile pass could not rescue
-// them either, because it only scans the date being processed.
-export function processingDates({ lookbackDays = LOOKBACK_DAYS, now = new Date() } = {}) {
+// again. Orders still unpacked for the previous day were abandoned silently —
+// 19 in August 2026 and 13 Flipkart orders on 13 October — and the reconcile
+// pass could not rescue them either, because it only scans the date being
+// processed.
+export function recentDatesIST(lookback = LOOKBACK_DAYS) {
+  const today = todayIST();
   const out = [];
-  for (let i = 0; i <= Math.max(0, lookbackDays); i++) {
-    const d = istDateDaysAgo(i, now);
-    if (!out.includes(d)) out.push(d);
+  for (let i = lookback; i >= 0; i--) {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i);
+    out.push(d.toISOString().slice(0, 10));
   }
   return out;
 }
@@ -114,14 +110,18 @@ export const SHIP_LABEL_RESOLUTION = 300;
 
 // --- Reliability tunables --------------------------------------------------
 
-// How many days back a cycle looks, in addition to today (see processingDates).
+// How many PREVIOUS days each cycle also processes, on top of today.
+// Orders can miss their own ship date for many reasons — a late pick list, a
+// pack failure that later clears, a stalled agent, a marketplace hiccup. Before
+// this existed the date rolled over at midnight IST and those orders were
+// abandoned permanently: never retried, never reconciled, never printed.
+// 2 means each cycle works on today plus the two days before it.
+//
+// Every cycle covers every one of these dates. An earlier draft of this change
+// re-checked the older days only hourly, to save a pick-task query per channel
+// per date; that was dropped because catching an abandoned day up to an hour
+// sooner is worth more than the queries it costs.
 export const LOOKBACK_DAYS = 2;
-
-// Look-back dates are re-checked at most this often, rather than on every
-// 15-minute cycle: today is what matters minute to minute, and each extra date
-// costs a pick-task query plus a validate call per channel. Hourly still
-// notices an abandoned day quickly — the orders lost in August sat for days.
-export const LOOKBACK_EVERY_MS = 60 * 60 * 1000;
 
 // Hard per-order failures allowed before an order is PARKED: taken out of the
 // retry loop and surfaced for manual attention.

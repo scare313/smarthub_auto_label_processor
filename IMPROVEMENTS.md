@@ -64,10 +64,13 @@ audited as `print-missing`, and left unprinted for the next press.
 ### 0.8 Look-back window (midnight rollover) — ✅ DONE · S · ●●●
 A cycle used to process `todayIST()` only, so at midnight IST the previous day's
 unpacked orders were abandoned — 19 were lost that way in August 2026.
-`datesForThisCycle()` in `scheduler.js` now covers today every cycle plus the
-two previous days once an hour (`LOOKBACK_DAYS`, `LOOKBACK_EVERY_MS`). Hourly
-rather than every cycle because each extra date costs a pick-task query plus a
-validate call per channel.
+`recentDatesIST()` in `config.js` now gives each cycle today plus the previous
+`LOOKBACK_DAYS` (default 2), oldest first so the order closest to breaching is
+handled first.
+
+**It does not catch everything.** Processing finds orders through pick tasks, so
+an order in no pick task on any date stays invisible to it. That was a separate
+bug with a separate fix — see 0.11.
 
 ### 0.9 Corrupt-state quarantine + daily backups — ✅ DONE · S · ●●●
 An unreadable `state.json` used to read as "nothing processed", which would
@@ -80,6 +83,22 @@ daily copies in `data/backups/`, and the hub pulls the peer's copy into
 Restoring is deliberately manual: an automatic restore of a day-old backup would
 mark recently printed orders unprinted and label them a second time. **Still
 open:** an off-site copy. Both current copies sit in the same building.
+
+### 0.11 Activate missed pick lists, not just recommended ones — ✅ DONE · S · ●●●
+Activation read only `/pick/cpts/recommended` and `/pick/lists/recommended`.
+Once a pickup window expires SmartHub stops returning it from both, so overdue
+orders were never offered again: never picked, packed, labelled or dispatched,
+and leaving no local trace, since an order that is never activated writes
+nothing to `state.json`. The log said "No new pick lists to activate" and looked
+healthy. This lost 13 Flipkart orders dated 13 October.
+
+`activate.js` now also reads `/api/pick/lists/missed` each cycle, activates
+missed lists first, de-duplicates across both sources, and cannot be blocked by
+a failure of the missed lookup. Both endpoints had been documented in
+`SMARTHUB_API.md` since June and were never wired in.
+
+**The look-back window (0.8) does not overlap with this.** Processing finds
+orders through pick tasks, and these were in no pick task on any date.
 
 ### 0.10 Confirm the peer's print before marking it printed — ✅ DONE · S · ●●
 The peer used to mark its labels printed the moment it handed them to the hub,
@@ -226,5 +245,5 @@ No automated test suite. Verification throughout has been manual (dry-runs,
 4. **Cutoff warnings** — the cutoff times have been sitting unused in `config.js` since the start; nothing warns before a handover deadline (`RISKS.md` §D).
 5. **1.4 "Printed Cancelled"** — surfacing printed-but-now-cancelled orders before handover (API is ready, feature isn't built).
 6. **4.1 Returns/RTO module** — fully designed, zero code (the anti-theft scan-reconciliation feature).
-7. **6.4 Tests** — the pure logic is now separable (`datesForThisCycle`, `splitByIncluded`, the store's failure accounting), so this got cheaper. There is still no runner.
+7. **6.4 Tests** — the pure logic is now separable (`recentDatesIST`, `splitByIncluded`, the store's failure accounting), so this got cheaper. There is still no runner.
 8. Everything else in Tiers 4–6 (inventory, analytics, SQLite, installer) — lower urgency, no immediate pain driving them.

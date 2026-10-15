@@ -247,12 +247,16 @@ app.post("/api/reprint", async (req, res) => {
 
 app.post("/api/summary", async (req, res) => {
   try {
+    // Optional `date` (YYYY-MM-DD) so a past day can be audited — e.g. checking
+    // whether SmartHub had more orders on a date than we ever activated.
+    const date = (req.body && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date)) ? req.body.date : todayIST();
     const rows = await queue.run("summary", async () => {
       const client = await getClient();
-      return marketStatus(client, { date: todayIST() });
+      return marketStatus(client, { date });
     });
-    lastSummary = rows;
-    res.json({ message: "Status updated.", rows });
+    // Only cache the status table when it is actually today's.
+    if (date === todayIST()) lastSummary = rows;
+    res.json({ message: `Status updated (${date}).`, date, rows });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

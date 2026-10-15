@@ -222,7 +222,7 @@ usable backup. That is a deliberate trade of availability for correctness.
 
 | # | Risk | Sev | Code | Mitigation |
 |---|---|---|---|---|
-| X1 | **No test suite** — regressions surface in production, on real orders. | 🔴 | M | Dry-run and `--limit 1` before anything irreversible. Pure logic is being pulled out so it *can* be checked without a browser: `datesForThisCycle()`, `splitByIncluded()`, `recordFailure()` and the watchdog and merge helpers all take plain inputs and return plain values. There is still no runner that executes them on every change. |
+| X1 | **No test suite** — regressions surface in production, on real orders. | 🔴 | M | Dry-run and `--limit 1` before anything irreversible. Pure logic is being pulled out so it *can* be checked without a browser: `recentDatesIST()`, `splitByIncluded()`, `recordFailure()` and the watchdog and merge helpers all take plain inputs and return plain values. There is still no runner that executes them on every change. |
 | X2 | **Version skew between machines.** Hub and peer share a protocol; updating one silently broke combined printing before (the `all` flag). | 🔴 | — | Always `git pull` + restart **both** PCs together — one deployment, not two. |
 | X3 | **Irreversible operations.** `generate-shiplabel` commits shipments. A bug can't be undone by rolling back code. | 🔴 | — | Dry-run → single order → batch. Never skip the middle step. |
 | X4 | **Restart required to deploy**, and the agent is the only thing processing. | 🟡 | — | Deploy away from cutoff windows. |

@@ -199,10 +199,19 @@ Details and recovery steps: `docs/TROUBLESHOOTING.md` §B8.
 
 ## Missed days are caught automatically
 
-Every cycle processes today's orders. Once an hour it also re-checks the **two
-previous days**, so an order left unpacked overnight is no longer abandoned when
-the date rolls over at midnight IST. Anything packed manually in SmartHub within
-that window is picked up too, and becomes printable.
+Every cycle processes **today plus the two previous days**, oldest first, so an
+order left unpacked overnight is no longer abandoned when the date rolls over at
+midnight IST. Anything packed manually in SmartHub within that window is picked
+up too, and becomes printable. `LOOKBACK_DAYS` in `src/config.js` widens it.
+
+Activation also reads SmartHub's **missed** pick lists each cycle, not just the
+recommended ones. An order whose pickup window has already expired is no longer
+offered through the recommended endpoints, so it would otherwise never be picked,
+packed, labelled or dispatched — and would leave no local trace, because an
+order that is never activated writes nothing to the state file. That is what lost
+13 Flipkart orders on 13 October. The look-back window could not have caught it:
+processing finds orders through pick tasks, and those orders were in no pick task
+on any date.
 
 ## The state file is backed up, and protected
 

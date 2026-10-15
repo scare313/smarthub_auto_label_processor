@@ -3,14 +3,7 @@
 // exactly, but reuses the server's persistent client (src/agent.js) instead of
 // launching a fresh browser each time.
 
-import {
-  CHANNELS,
-  resolveChannel,
-  todayIST,
-  processingDates,
-  LOOKBACK_DAYS,
-  LOOKBACK_EVERY_MS,
-} from "./config.js";
+import { CHANNELS, resolveChannel, recentDatesIST } from "./config.js";
 import { SessionExpiredError } from "./api.js";
 import { activateChannel } from "./activate.js";
 import { processChannel } from "./pipeline.js";
@@ -20,26 +13,8 @@ import { store } from "./store.js";
 import { log } from "./log.js";
 import { getClient, checkSession } from "./agent.js";
 
-// Look-back pacing. Today is processed every cycle (every 15 min). Yesterday and
-// the day before are checked at most hourly.
-//
-// WHY the gate: with 4 channels and a 3-day window, every cycle would run 12
-// pick-task discoveries and validations instead of 4. That tripled load on
-// SmartHub for dates that are almost always finished, and 503s from SmartHub are
-// the single most common failure this agent sees. Starting at 0 means the first
-// cycle after any restart DOES include the look-back, which is when a missed day
-// is most likely to be sitting there.
-let lastLookbackAt = 0;
-
 // Email about a degraded store once per outage, not once per cycle.
 let degradedNotified = false;
-
-// `lastAt` is injectable so this is testable without reaching into module state.
-export function datesForThisCycle({ now = Date.now(), lookbackDays = LOOKBACK_DAYS, lastAt = lastLookbackAt } = {}) {
-  const all = processingDates({ lookbackDays, now: new Date(now) });
-  const due = now - lastAt >= LOOKBACK_EVERY_MS;
-  return due ? all : all.slice(0, 1);
-}
 
 // Orders that have been announced as parked, so the operator is emailed once per
 // order and not every 15 minutes. An id that stops being parked (retried, or
@@ -107,16 +82,17 @@ export async function runCycle({ date } = {}) {
   }
   degradedNotified = false;
 
-  // One explicit date (a manual catch-up run) or today plus the look-back window.
-  const dates = date ? [date] : datesForThisCycle();
-  const didLookback = dates.length > 1;
+  // An explicit date (CLI, --date) processes only that day. The scheduler
+  // processes today PLUS the previous LOOKBACK_DAYS, oldest first, so anything
+  // that missed its own ship date still gets activated, packed, labelled and
+  // printed instead of being abandoned at the midnight rollover. The last entry
+  // is always today.
+  const dates = date ? [date] : recentDatesIST();
+  const today = dates[dates.length - 1];
   const channels = Object.keys(CHANNELS).map(resolveChannel);
   const client = await getClient();
 
-  log.info(
-    `Cycle start — ${dates.join(", ")} — channels: ${channels.map((c) => c.key).join(", ")}` +
-      (didLookback ? ` (including ${dates.length - 1} look-back day(s))` : "")
-  );
+  log.info(`Cycle start — ${dates.join(", ")} — channels: ${channels.map((c) => c.key).join(", ")}`);
 
   // Use agent.js's checkSession (not client.checkSession directly) so the
   // cached session state — what the web page's status bar reads — actually
@@ -132,9 +108,10 @@ export async function runCycle({ date } = {}) {
   let expired = false;
   for (const ch of channels) {
     try {
-      // Activation is date-agnostic: it reads SmartHub's recommended pick-list
-      // slots for upcoming pickups. Run it ONCE per channel, not once per date,
-      // or a 3-date cycle would activate the same lists three times over.
+      // Activation is date-agnostic — SmartHub decides which pick lists are
+      // outstanding, including the missed ones — so it runs once per channel,
+      // not once per date. A 3-date cycle would otherwise activate the same
+      // lists three times over.
       await activateChannel(client, { channel: ch, dryRun: false });
     } catch (e) {
       if (e instanceof SessionExpiredError) {
@@ -146,18 +123,17 @@ export async function runCycle({ date } = {}) {
       store.audit(ch.key, "auto-error", `activate: ${e.message}`);
     }
 
-    for (let i = 0; i < dates.length; i++) {
-      const shipDate = dates[i];
+    for (const shipDate of dates) {
       try {
         const r = await processChannel(client, {
           channel: ch,
           date: shipDate,
           dryRun: false,
           limit: Infinity,
-          // Index 0 is today — always reported. Earlier dates stay quiet unless
-          // they actually have work, so the log doesn't fill with "nothing on
+          // Today is always reported. Earlier dates stay quiet unless they
+          // actually have work, so the log doesn't fill with "nothing on
           // 2026-10-13" four times an hour.
-          quietIfEmpty: i > 0,
+          quietIfEmpty: shipDate !== today,
         });
         results.push(r);
       } catch (e) {
@@ -173,10 +149,6 @@ export async function runCycle({ date } = {}) {
     }
     if (expired) break;
   }
-
-  // Only mark the look-back as done once it actually ran, so a cycle that bailed
-  // early doesn't push the next catch-up attempt an hour away.
-  if (didLookback) lastLookbackAt = Date.now();
 
   await notifyNewlyParked();
 

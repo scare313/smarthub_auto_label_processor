@@ -44,7 +44,7 @@ src/
   print.js       284   Download labels → combined PDF → mark printed
   scheduler.js   234   15-min clock-aligned loop, runCycle()
   store.js       417   state.json read/write, failures, backups
-  activate.js     62   Turn new orders into pick lists
+  activate.js     87   Turn new AND missed orders into pick lists
   status.js       48   "Today's status" numbers
   picklist.js    191   SKU pick manifest (Excel)
   merge.js        31   Merge PDFs + pick rows across machines
@@ -81,11 +81,11 @@ scheduler.js  runCycle()
       ├─ store.health()                  state.json readable? else STOP
       ├─ agent.js   getClient()          reuse browser, or launch it
       ├─ agent.js   checkSession()       alive? else alert + stop
-      ├─ datesForThisCycle()             today, plus the last 2 days hourly
+      ├─ recentDatesIST()                [oldest ... today], 3 days by default
       │
       └─ for each channel (amazon, flipkart, meesho, fba):
              │
-             ├─ activate.js  activateChannel()     new orders → pick list
+             ├─ activate.js  activateChannel()     new + MISSED → pick list
              │
              └─ for each date: pipeline.js  processChannel()
                     │
@@ -161,7 +161,6 @@ The reliability tunables live at the bottom of the same file:
 
 ```js
 export const LOOKBACK_DAYS = 2;              // today + 2 earlier days
-export const LOOKBACK_EVERY_MS = 3600000;    // earlier days re-checked hourly
 export const MAX_ORDER_ATTEMPTS = 5;         // hard failures before parking
 export const TRANSIENT_ERROR_PATTERNS = [...];  // these never count toward it
 export const BACKUP_RETENTION_DAYS = 14;
@@ -343,29 +342,65 @@ Re-arms with `setTimeout` after each run (not `setInterval`), so it lands on
 :00/:15/:30/:45 and can't drift. It also runs once immediately on startup.
 
 ```js
-export function datesForThisCycle({ now, lookbackDays, lastAt } = {}) {
-  const all = processingDates({ lookbackDays, now: new Date(now) });
-  const due = now - lastAt >= LOOKBACK_EVERY_MS;
-  return due ? all : all.slice(0, 1);        // today always; earlier days hourly
-}
+const dates = date ? [date] : recentDatesIST();   // [oldest ... today]
 ```
 
 A cycle used to process `todayIST()` and nothing else, so at midnight IST it
-moved to the new date and never looked at the old one again — 19 orders were
-abandoned that way in August 2026. Now every cycle covers today, and once an
-hour it also covers the two previous days. `lastLookbackAt` starts at 0, so the
-first cycle after any restart includes the catch-up.
+moved to the new date and never looked at the old one again. That cost 19 orders
+in August 2026 and 13 Flipkart orders on 13 October.
 
-Hourly rather than every cycle because each extra date costs a pick-task query
-plus a validate call **per channel** — four channels times three dates every
-15 minutes would triple the query load to catch something that, when it
-happened, sat unnoticed for days.
+Each cycle now processes **today plus the previous `LOOKBACK_DAYS`** (default 2),
+**oldest first**, so the order closest to breaching is handled before the rest.
+An explicit `--date` on the CLI still processes only that one day. Earlier dates
+are passed `quietIfEmpty`, so they only appear in the log when they actually
+have work.
+
+Activation runs **once per channel**, not once per date — SmartHub decides which
+pick lists are outstanding, so asking per-date would repeat the same call.
 
 `runCycle()` also starts with a `store.health()` guard. A degraded state file
 stops the cycle before the browser is touched, emails once, and returns
-`{ ok: false, reason: "store-degraded" }`. `activateChannel()` runs once per
-channel, outside the date loop, because a pick list is created from new orders
-rather than per ship date.
+`{ ok: false, reason: "store-degraded" }`.
+
+> **The look-back does not rescue everything.** It finds orders through pick
+> tasks, so an order in no pick task on any date is invisible to it. That is a
+> separate failure with a separate fix — see `activate.js` and the missed pick
+> lists below.
+
+### `src/activate.js` — the step before everything else
+
+Nothing can be packed, labelled or printed until its order is in an **activated
+pick list**. This module creates them, and it reads **two** sources:
+
+```js
+const cards = await client.getRecommendedLists(pickupTimes);   // current windows
+const missedCards = (await client.getMissedLists()) || [];     // windows gone by
+const mine = [...missed, ...upcoming].filter(dedupe);          // missed first
+```
+
+**Only the first one existed at first, and that lost 13 Flipkart orders on 13
+October.** Once a pickup window expires, SmartHub stops returning it from the
+recommended endpoints, so those orders were never offered again: never picked,
+packed, labelled or dispatched. They left no local trace either, because an
+order that is never activated writes nothing to `state.json` — the log said
+`No new pick lists to activate` and looked healthy.
+
+**The look-back window could not have caught this.** Processing finds orders
+through pick tasks, and these were in no pick task on any date.
+
+Three details in there are deliberate:
+
+- **Missed lists are activated first.** They are already overdue.
+- **A failure of the missed lookup cannot block normal activation** — it is
+  caught, warned about, and the upcoming lists still go through.
+- **There is no early return when no window is recommended.** That early return
+  was itself part of the bug: a missed order is exactly the case where nothing
+  is recommended.
+- **A list appearing in both sources is activated once**, keyed on its ship
+  epoch and order count.
+
+Both endpoints had been sitting documented in `SMARTHUB_API.md` since a June HAR
+capture and were simply never wired in.
 
 ### `server.js`
 
@@ -502,6 +537,7 @@ These are *missing*, not broken — don't be surprised by them:
 
 | Gap | Effect | Fix |
 |---|---|---|
+
 | **Cutoffs unused** | No warning before a deadline | `RISKS.md` §D |
 | **No external watcher** | If the hub itself dies, nothing alerts | Needs the always-on third machine |
 | **No automated tests** | Every change is verified by hand | `IMPROVEMENTS.md` §6.4 |

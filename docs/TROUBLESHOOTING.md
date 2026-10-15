@@ -18,6 +18,7 @@ Each entry: **what you see → what it means → how to fix it.**
 | Some orders fail every cycle | [B1](#b1-lycs_invalid_input--pack-keeps-failing) |
 | "Maximum number of retry reached" | [B2](#b2-forbidden_request--maximum-number-of-retry-reached) |
 | Orders from a previous day never shipped | [B3](#b3-yesterdays-orders-were-never-processed) |
+| SmartHub's "Missed orders" tab has a count | [B3b](#b3b-orders-sit-in-smarthubs-missed-orders-tab) |
 | Marketplace says label ready, SmartHub doesn't | [B4](#b4-marketplace-shows-label-downloaded-but-smarthub-isnt-packed) |
 | "0 labelled successfully" with no reason | [B5](#b5-0-labelled-successfully-but-no-error-shown) |
 | An order is parked / "Needs attention" | [B8](#b8-an-order-is-parked--needs-attention) |
@@ -160,24 +161,66 @@ failure ([B1](#b1-lycs_invalid_input--pack-keeps-failing)) so the loop stops.
 while our logs show nothing wrong.
 
 **This used to be the midnight rollover**, and it was the single biggest source
-of silently lost orders — 19 in August 2026. The cycle processed `todayIST()`
-only, so at midnight IST it switched to the new date and never looked back.
+of silently lost orders — 19 in August 2026 and 13 Flipkart orders on 13
+October. The cycle processed `todayIST()` only, so at midnight IST it switched to
+the new date and never looked back.
 
-**Fixed.** Every cycle processes today, and once an hour it also processes the
-**two previous days**. Reconciliation runs for each of those dates too, so an
-order you packed manually yesterday is picked up and becomes printable.
+**Fixed.** Each cycle processes **today plus the previous `LOOKBACK_DAYS`**
+(default 2, in `src/config.js`), oldest first so the order closest to breaching
+goes first. Reconciliation runs for each of those dates too, so an order you
+packed by hand yesterday is picked up and becomes printable.
+
+If orders older than the window are stuck, raise `LOOKBACK_DAYS` — each extra
+day adds one more pass per channel per cycle.
 
 **If orders from a previous day are still unprocessed, the cause is now one of:**
 
 | Cause | How to tell | Fix |
 |---|---|---|
+| **In no pick list at all** | SmartHub's Missed orders tab shows a count | See [B3b](#b3b-orders-sit-in-smarthubs-missed-orders-tab) — the look-back cannot reach these |
 | **Older than the look-back window** (3+ days) | Ship date is older than two days | Handle in SmartHub manually, including the label download |
 | **Parked after repeated failures** | It is listed in "Needs attention" on the page | Fix the cause, then Retry — see [B8](#b8-an-order-is-parked--needs-attention) |
 | **The agent was not running** | Gap in `data/logs/agent-*.log` | Start it; the next cycle catches up within the window |
 | **State file degraded** | Red banner on the page | See [B9](#b9-state-file-degraded--the-agent-refuses-to-run) |
 
-To confirm the look-back is actually running, watch the Activity Log for one
-cycle: today's date appears every time, the earlier dates about once an hour.
+To confirm the look-back is running, watch the Activity Log for one cycle: the
+`Cycle start` line names every date it is covering, oldest first.
+
+**Useful trick:** if you manually pack an order **on its own ship date**, the next
+cycle reconciles it automatically and it becomes printable. Do it the next day and
+you must download the label yourself.
+
+> 19 orders were lost this way in August, before the look-back window existed.
+> The 13 Flipkart orders of 13 October were lost to [B3b](#b3b-orders-sit-in-smarthubs-missed-orders-tab) instead, which the look-back could not have caught.
+
+## B3b. Orders sit in SmartHub's "Missed orders" tab
+
+**You see:** the marketplace says orders are pending dispatch, SmartHub's
+**Missed orders** tab shows a count, but the tool reports
+`No new pick lists to activate` and nothing happens.
+
+**Means:** their pickup window has passed. SmartHub stops offering expired
+windows through the "recommended" endpoints, so activation never sees them.
+Because they are in no pick list, processing cannot find them either — on any
+date, including with the look-back window.
+
+**This is now handled automatically:** activation also reads
+`/api/pick/lists/missed` every cycle and activates overdue lists first. The log
+shows:
+
+```
+[flipkart] 13 MISSED order(s) past their ship date, in 1 pick list(s) - activating.
+```
+
+**If they are still stuck**, activate them by hand from the Missed orders tab in
+SmartHub. Once they are in an activated pick list, the next cycle packs,
+labels and prints them normally.
+
+**This is the one previous-day failure the look-back window cannot fix.**
+Processing finds orders through pick tasks, and these are in no pick task on any
+date, so widening the dates never reaches them. The fix had to be in activation.
+
+---
 
 ## B4. Marketplace shows "label downloaded" but SmartHub isn't packed
 
