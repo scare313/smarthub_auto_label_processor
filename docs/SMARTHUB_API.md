@@ -392,6 +392,16 @@
 
 #### `GET /api/pick/lists/missed`
 - Source: `1amazon_easy_ship_missed.har` · status 200
+- **Used by `src/activate.js`.** Orders whose pickup window has already passed
+  and that are still not in a pick list — the "Missed orders" tab in the UI.
+- ⚠️ **Critical:** once a window expires SmartHub stops returning it from
+  `/pick/cpts/recommended` and `/pick/lists/recommended`. Activation driven only
+  by those endpoints never sees overdue orders again, so they are never picked,
+  packed, labelled or dispatched — and leave no local trace at all. This endpoint
+  is the only way to find them. 13 Flipkart orders were lost this way on
+  13 Oct 2026 before activation started reading it.
+- Card shape is identical to `/pick/lists/recommended`, so both activate through
+  the same `POST /api/pick/list` call.
 
 **Response**
 ```json

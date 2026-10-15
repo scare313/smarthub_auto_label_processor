@@ -260,6 +260,23 @@ export class SmartHubClient {
     );
   }
 
+  // MISSED orders: shipments whose pickup window has already passed and that
+  // are still not in a pick list. Critically, these do NOT appear in
+  // /pick/cpts/recommended or /pick/lists/recommended — once a window expires
+  // SmartHub stops recommending it, so activation driven only by the
+  // "recommended" endpoints never sees them and they are silently never picked,
+  // packed, labelled or dispatched.
+  async getMissedCount() {
+    return this._getJson("/api/pick/orders/missed/count", "getMissedCount");
+  }
+
+  // Same card shape as getRecommendedLists, so callers can treat both alike:
+  // { expectedShipEpoch, numberOfOrders, pickTaskNotGenerated,
+  //   displayableSalesChannel: { salesChannel, isSelfShip } }
+  async getMissedLists() {
+    return this._getJson("/api/pick/lists/missed", "getMissedLists");
+  }
+
   // Create (activate) a pick list. Returns the new pick task id (a bare string).
   async createPickList({ expectedShipEpoch, numberOfOrders, salesChannel, isSelfShip = false }) {
     return this._postJson(

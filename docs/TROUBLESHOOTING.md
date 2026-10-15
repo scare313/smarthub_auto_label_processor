@@ -164,6 +164,31 @@ you must download the label yourself.
 
 > 19 orders were lost this way in August, before the look-back window existed.
 
+## B3b. Orders sit in SmartHub's "Missed orders" tab
+
+**You see:** the marketplace says orders are pending dispatch, SmartHub's
+**Missed orders** tab shows a count, but the tool reports
+`No new pick lists to activate` and nothing happens.
+
+**Means:** their pickup window has passed. SmartHub stops offering expired
+windows through the "recommended" endpoints, so activation never sees them.
+Because they are in no pick list, processing cannot find them either — on any
+date, including with the look-back window.
+
+**This is now handled automatically:** activation also reads
+`/api/pick/lists/missed` every cycle and activates overdue lists first. The log
+shows:
+
+```
+[flipkart] 13 MISSED order(s) past their ship date, in 1 pick list(s) - activating.
+```
+
+**If they are still stuck**, activate them by hand from the Missed orders tab in
+SmartHub. Once they are in an activated pick list, the next cycle packs,
+labels and prints them normally.
+
+---
+
 ## B4. Marketplace shows "label downloaded" but SmartHub isn't packed
 
 **Means:** the label was created on the **courier's** side, but SmartHub's pack

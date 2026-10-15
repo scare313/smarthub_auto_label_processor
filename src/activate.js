@@ -8,27 +8,52 @@
 import { log } from "./log.js";
 import { store } from "./store.js";
 
+const mineFor = (channel) => (c) =>
+  c?.displayableSalesChannel?.salesChannel === channel.salesChannel &&
+  c.pickTaskNotGenerated &&
+  (c.numberOfOrders || 0) > 0;
+
 export async function activateChannel(client, { channel, dryRun }) {
   const mode = dryRun ? "DRY-RUN" : "LIVE";
 
   // 1. Which CPT windows currently have un-picklisted (new) orders?
+  //    Note this covers only CURRENT/UPCOMING windows. Orders whose window has
+  //    already passed are handled by the missed list in step 2b — without that,
+  //    they are never offered again and silently never ship.
   const cpts = await client.getRecommendedCpts();
   const windowsWithNew = cpts.filter((c) => (c.newOrders || 0) > 0);
-  if (!windowsWithNew.length) {
-    log.info(`[${channel.key}] No new orders awaiting pick-list activation.`);
-    return { channel: channel.key, created: [] };
-  }
   const pickupTimes = [...new Set(windowsWithNew.map((c) => c.startTime))];
 
-  // 2. Recommended pick-list cards for those windows, filtered to this channel
-  //    and to cards not yet generated.
-  const cards = await client.getRecommendedLists(pickupTimes);
-  const mine = cards.filter(
-    (c) =>
-      c?.displayableSalesChannel?.salesChannel === channel.salesChannel &&
-      c.pickTaskNotGenerated &&
-      (c.numberOfOrders || 0) > 0
-  );
+  // 2a. Recommended pick-list cards for those windows, for this channel.
+  let upcoming = [];
+  if (pickupTimes.length) {
+    const cards = await client.getRecommendedLists(pickupTimes);
+    upcoming = cards.filter(mineFor(channel));
+  }
+
+  // 2b. MISSED pick lists — windows already past, still not picked. Same card
+  //     shape, so they activate through exactly the same call below.
+  let missed = [];
+  try {
+    const missedCards = (await client.getMissedLists()) || [];
+    missed = missedCards.filter(mineFor(channel));
+    if (missed.length) {
+      const n = missed.reduce((a, c) => a + (c.numberOfOrders || 0), 0);
+      log.warn(`[${channel.key}] ${n} MISSED order(s) past their ship date, in ${missed.length} pick list(s) — activating.`);
+    }
+  } catch (e) {
+    // Never let the missed lookup break normal activation.
+    log.warn(`[${channel.key}] could not fetch missed pick lists: ${e.message}`);
+  }
+
+  // Missed first: they are already overdue and the most urgent to get moving.
+  const seen = new Set();
+  const mine = [...missed, ...upcoming].filter((c) => {
+    const k = `${c.expectedShipEpoch}:${c.numberOfOrders}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   if (!mine.length) {
     log.info(`[${channel.key}] No new pick lists to activate (already activated or no orders).`);
