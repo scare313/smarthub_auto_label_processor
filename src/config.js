@@ -177,6 +177,10 @@ export function isTransientError(detail) {
 
 // How many days of daily state.json backups and agent log files to keep.
 export const BACKUP_RETENTION_DAYS = 14;
+
+// How long to remember that a pick task is finished. Past this it is dropped
+// from findPickTasks anyway, so forgetting costs nothing.
+export const SETTLED_RETENTION_DAYS = 30;
 export const LOG_RETENTION_DAYS = 14;
 
 // Fixed package used for ALL orders on every channel (per business decision).

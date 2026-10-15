@@ -250,17 +250,37 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
   }
   log.info(`[${channel.key}] Found ${tasks.length} pick task(s): ${tasks.map((t) => `${t.id}(${t.status})`).join(", ")}`);
 
+  // Skip tasks already proven finished (see store.markSettled below). Nothing in
+  // them can change, so re-validating only costs an API call per task per cycle,
+  // forever, for every pick list ever created.
+  const live = tasks.filter((t) => !store.isSettled(t.id));
+  const settledNow = tasks.length - live.length;
+  if (settledNow) {
+    log.info(`[${channel.key}] ${settledNow} pick task(s) already finished — skipped.`);
+  }
+  if (!live.length) {
+    if (!quietIfEmpty) log.ok(`[${channel.key}] Nothing to process.`);
+    return { channel: channel.key, shipments: 0, processed: 0, date, quiet: !!quietIfEmpty, settledSkipped: settledNow };
+  }
+
   // 2. Validate each pick task and collect shipments (+ SKU line items + packed).
   let shipments = [];
   const lineItemsByCsid = {};
   const packedOrders = [];
-  for (const t of tasks) {
+  const taskInfo = [];
+  for (const t of live) {
     const v = await client.validatePickTask(t.id);
     const list = extractShipments(v).map((s) => ({ ...s, pickTaskId: t.id }));
     Object.assign(lineItemsByCsid, extractLineItems(v));
     packedOrders.push(...extractPackedOrders(v));
     log.info(`[${channel.key}] ${t.id}: ${v.numberOfShipments} shipments, ${v.numberOfShipmentsPacked} already packed`);
     shipments.push(...list);
+    taskInfo.push({
+      id: t.id,
+      status: t.status,
+      fullyPacked: Number(v.numberOfShipments) > 0 && Number(v.numberOfShipments) === Number(v.numberOfShipmentsPacked),
+      csids: [...new Set([...list.map((x) => x.customerShipmentId), ...extractPackedOrders(v).map((x) => x.customerShipmentId)])],
+    });
   }
 
   // 2b. Reconcile orphans: orders packed in SmartHub but not in our store become
@@ -283,6 +303,21 @@ export async function processChannel(client, { channel, date, dryRun, limit, qui
     if (reconciled) {
       log.ok(`[${channel.key}] Reconciled ${reconciled} packed order(s) missing from local store (now printable).`);
       store.audit(channel.key, "reconciled", `${reconciled} packed orders`);
+    }
+
+    // 2c. A task is finished only on EVIDENCE, never on status alone: COMPLETED,
+    // every shipment packed, and every one of them now in our store. Checked
+    // after reconciliation so an orphan is rescued before we stop looking at the
+    // task that would have revealed it.
+    for (const t of taskInfo) {
+      const done =
+        String(t.status).toUpperCase() === "COMPLETED" &&
+        t.fullyPacked &&
+        t.csids.length > 0 &&
+        t.csids.every((id) => store.isProcessed(id));
+      if (done && store.markSettled(t.id)) {
+        log.info(`[${channel.key}] ${t.id} is finished — it will not be checked again.`);
+      }
     }
   }
 

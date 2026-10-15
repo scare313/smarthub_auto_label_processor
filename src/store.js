@@ -5,6 +5,7 @@
 // {
 //   processed: { "<customerShipmentId>": { orderId, channel, date, status, labelFile, trackingId, ts } },
 //   failures:  { "<customerShipmentId>": { orderId, channel, date, reason, attempts, hardAttempts, flagged, firstAt, lastAt } },
+//   settledTasks: { "<pickTaskId>": "<iso ts>" },   // fully done, never re-validated
 //   audit:     [ { ts, channel, action, detail } ],
 //   lastPrint: { files, ts },
 //   backupDay: "YYYY-MM-DD"
@@ -26,7 +27,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS, todayIST } from "./config.js";
+import { DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS, SETTLED_RETENTION_DAYS, todayIST } from "./config.js";
 
 const STORE_PATH = path.join(DATA_DIR, "state.json");
 const BACKUP_DIR = path.join(DATA_DIR, "backups");
@@ -359,6 +360,38 @@ export const store = {
       .filter(([, r]) => (date ? r.date === date : true))
       .map(([customerShipmentId, r]) => ({ customerShipmentId, ...r }))
       .sort((a, b) => String(b.lastAt || "").localeCompare(String(a.lastAt || "")));
+  },
+
+  // A pick task that is COMPLETED, fully packed, and whose every shipment we
+  // already hold is finished for good - nothing in it can change. Remembering
+  // that lets the next cycle skip re-validating it, which was ~16 pointless API
+  // calls per cycle and grew with every pick list ever created.
+  //
+  // Deliberately stored IN state.json rather than in memory: restoring a backup
+  // then rolls this back in step with `processed`, so a restored store can
+  // never think a task is settled when it no longer holds that task's orders.
+  isSettled(pickTaskId) {
+    const s = read();
+    return !!(s.settledTasks || {})[pickTaskId];
+  },
+
+  markSettled(pickTaskId) {
+    const s = read();
+    s.settledTasks = s.settledTasks || {};
+    if (s.settledTasks[pickTaskId]) return false;
+    s.settledTasks[pickTaskId] = new Date().toISOString();
+    // Keep it bounded. A task older than the retention window is long gone from
+    // findPickTasks anyway, so forgetting it costs nothing.
+    const cutoff = Date.now() - SETTLED_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    for (const [id, ts] of Object.entries(s.settledTasks)) {
+      if (new Date(ts).getTime() < cutoff) delete s.settledTasks[id];
+    }
+    write(s);
+    return true;
+  },
+
+  settledCount() {
+    return Object.keys(read().settledTasks || {}).length;
   },
 
   failureCounts() {
