@@ -21,7 +21,7 @@ import { queue } from "./src/queue.js";
 import { getClient, getSessionState, doLogin, closeClient } from "./src/agent.js";
 import { runCycle, startScheduler } from "./src/scheduler.js";
 import { printNewLabels, reprintLast, printDayIST, openFile } from "./src/print.js";
-import { marketStatus } from "./src/status.js";
+import { marketStatus, forecast } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
 import { todayIST, LABELS_DIR, DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS } from "./src/config.js";
 import { listPeers, sharedSecret, isHub, selfName } from "./src/peers.js";
@@ -49,6 +49,13 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 let lastCycleAt = null;
+
+// Orders already booked for the next few days. Refreshed HOURLY, not per cycle:
+// it costs one orders/summary call per channel per day, and a count for a day
+// that has not arrived yet does not change minute to minute.
+let upcoming = [];
+let upcomingAt = 0;
+const UPCOMING_EVERY_MS = 60 * 60 * 1000;
 let lastSummary = null; // cached rows from the last /api/summary call
 
 // --- Peer health (hub only): a lightweight background ping of each configured
@@ -75,10 +82,11 @@ async function checkPeerHealth() {
         sessionAlive: s.sessionAlive ?? null,
         lastCycleAt: s.lastCycleAt ?? null, // so the hub can spot a stalled peer
         version: s.version?.id ?? null,      // so a machine left on old code is visible
+        upcoming: Array.isArray(s.upcoming) ? s.upcoming : [],
         checkedAt: new Date().toISOString(),
       };
     } catch {
-      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, lastCycleAt: null, version: null, checkedAt: new Date().toISOString() };
+      peerHealth[peer.name] = { url: peer.url, online: false, pending: 0, summary: null, sessionAlive: null, lastCycleAt: null, version: null, upcoming: [], checkedAt: new Date().toISOString() };
     } finally {
       clearTimeout(timer);
     }
@@ -135,6 +143,7 @@ app.get("/api/status", (req, res) => {
 
   res.json({
     version: VERSION,
+    upcoming,
     host: os.hostname(),
     name: selfName() || os.hostname(),
     date: todayIST(),
@@ -706,6 +715,10 @@ app.listen(PORT, () => {
       try {
         const client = await getClient();
         lastSummary = await marketStatus(client, { date: todayIST() });
+        if (Date.now() - upcomingAt > UPCOMING_EVERY_MS) {
+          upcoming = await forecast(client, { days: 3 });
+          upcomingAt = Date.now();
+        }
       } catch (e) {
         log.warn(`Post-cycle status refresh failed: ${e.message}`);
       }

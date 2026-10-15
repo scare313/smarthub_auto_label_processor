@@ -30,6 +30,11 @@
   /* Deliberately quiet. These orders are retried every cycle on their own and
      need nothing from anyone, so this is a note, not an alarm. Red is reserved
      for the things that actually stop work: an expired session, a dead peer. */
+  .upcoming { font-size: 0.8rem; color: #999; margin: -1rem 0 1rem; display: flex;
+              flex-wrap: wrap; gap: 0 1.1rem; }
+  .upcoming b { color: inherit; font-weight: 600; }
+  .upcoming .lbl { color: #777; }
+
   .attnline { background: none; border: none; color: #999; font-size: 0.8rem;
               padding: 0 0 0.2rem; margin: -1rem 0 1.2rem; cursor: pointer;
               text-align: left; text-decoration: underline; text-underline-offset: 3px; }
@@ -153,6 +158,8 @@
   <div id="dash-wrap">
     <div class="dash-empty">Loading…</div>
   </div>
+
+  <div class="upcoming" id="upcoming" hidden></div>
 
   <button class="attnline" id="attention" hidden aria-expanded="false">
     <span id="attention-title"></span>
@@ -380,6 +387,30 @@ async function refreshStatus() {
     const flaggedCount = (j.exceptions && j.exceptions.flagged) || 0;
     if (flaggedCount > 0) refreshExceptions();
     else { $("attention").hidden = true; $("attention-panel").hidden = true; }
+
+    // Orders already booked for the next few days, summed across every machine
+    // so the number is "what the business has coming", not one account's share.
+    const totals = new Map();
+    for (const row of [...(j.upcoming || []), ...peers.flatMap((p) => p.upcoming || [])]) {
+      if (!row || !row.date) continue;
+      totals.set(row.date, (totals.get(row.date) || 0) + (row.total || 0));
+    }
+    const up = $("upcoming");
+    const dates = [...totals.keys()].sort();
+    if (dates.length) {
+      up.innerHTML =
+        '<span class="lbl">Coming up</span>' +
+        dates
+          .map((d) => {
+            const dt = new Date(`${d}T00:00:00`);
+            const label = dt.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+            return `<span>${label} <b>${totals.get(d)}</b></span>`;
+          })
+          .join("");
+      up.hidden = false;
+    } else {
+      up.hidden = true;
+    }
 
     // Combined status across this machine + peers.
     renderDash([{ name: selfLabel, rows: j.lastSummary }, ...peers.map((p) => ({ name: p.name, rows: p.summary }))]);

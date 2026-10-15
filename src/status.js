@@ -1,7 +1,7 @@
 // Live marketplace-wise status: total / processed / waiting (from SmartHub's
 // orders/summary) + printed (from our local store).
 
-import { CHANNELS, resolveChannel } from "./config.js";
+import { CHANNELS, resolveChannel, todayIST } from "./config.js";
 import { store } from "./store.js";
 import { log } from "./log.js";
 
@@ -45,4 +45,36 @@ export async function marketStatus(client, { date }) {
   log.raw("");
   log.raw("  Processed = packed+shipped in SmartHub | Waiting = not yet packed | Printed = labels printed locally");
   return rows;
+}
+
+// How many orders are already booked for the NEXT few days, so stock and staff
+// can be planned before the morning. Uses the same orders/summary call as the
+// table above - SmartHub answers for future dates exactly as it does for past
+// ones - so this needs no new endpoint.
+//
+// Read-only and non-essential: any date that fails is simply omitted rather
+// than breaking the status the page actually depends on.
+export async function forecast(client, { days = 3, from = null } = {}) {
+  const base = from || todayIST();
+  const out = [];
+  for (let i = 1; i <= days; i++) {
+    const d = new Date(`${base}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + i);
+    const date = d.toISOString().slice(0, 10);
+
+    let total = 0;
+    let ok = false;
+    for (const key of Object.keys(CHANNELS)) {
+      const ch = resolveChannel(key);
+      try {
+        const sum = await client.getOrdersSummary(date, ch.salesChannel, ch.isSelfShip);
+        total += n(sum && sum.totalOrders);
+        ok = true;
+      } catch (e) {
+        log.warn(`[${key}] forecast for ${date} failed: ${e.message}`);
+      }
+    }
+    if (ok) out.push({ date, total });
+  }
+  return out;
 }
