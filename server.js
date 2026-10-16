@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { queue } from "./src/queue.js";
 import { getClient, getSessionState, doLogin, closeClient } from "./src/agent.js";
 import { runCycle, startScheduler } from "./src/scheduler.js";
-import { printNewLabels, reprintLast, printDayIST, openFile } from "./src/print.js";
+import { printNewLabels, reprintLast, printDayIST, openFile, fetchOneLabel } from "./src/print.js";
 import { marketStatus, forecast } from "./src/status.js";
 import { getRecentLogs, log } from "./src/log.js";
 import { todayIST, LABELS_DIR, DATA_DIR, MAX_ORDER_ATTEMPTS, BACKUP_RETENTION_DAYS, resolveChannel } from "./src/config.js";
@@ -210,6 +210,111 @@ app.get("/api/activation-debug", async (req, res) => {
       };
     });
     res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Scan a parcel's label, get the order. The hub searches its OWN store and
+// every peer's, because the two accounts run on different machines and a parcel
+// on the bench can belong to either - searching only locally would fail on half
+// of them.
+async function lookupEverywhere(q) {
+  const mine = store.findOrder(q);
+  if (mine) return { ...mine, machine: selfName() || os.hostname(), local: true };
+
+  for (const peer of listPeers()) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const r = await fetch(`${peer.url}/api/peer/order?q=${encodeURIComponent(q)}`, {
+        headers: { "X-Agent-Token": sharedSecret() },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j && j.order) return { ...j.order, machine: peer.name, local: false };
+    } catch {
+      // A peer being down must not break a lookup the local store could answer.
+    }
+  }
+  return null;
+}
+
+app.get("/api/order", async (req, res) => {
+  try {
+    const q = String(req.query.q || "");
+    if (q.trim().length < 4) return res.status(400).json({ error: "Scan or type at least 4 characters." });
+    const order = await lookupEverywhere(q);
+    if (!order) return res.status(404).json({ error: `Nothing found for "${q}".`, query: q });
+    res.json({ order, query: q });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// A peer answers a lookup against its own store.
+app.get("/api/peer/order", peerAuth, (req, res) => {
+  try {
+    res.json({ order: store.findOrder(String(req.query.q || "")) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reprint one scanned parcel's label. If the order belongs to a peer, that peer
+// fetches it - only that machine holds the Amazon session for its own account -
+// and sends the bytes back here, so the PDF always opens next to the printer.
+app.post("/api/order/label", async (req, res) => {
+  try {
+    const q = String((req.body && req.body.q) || "");
+    const order = await lookupEverywhere(q);
+    if (!order) return res.status(404).json({ error: `Nothing found for "${q}".` });
+    if (order.status === "FAILED") {
+      return res.status(409).json({ error: `${order.orderId || q} has no label yet - it is still failing: ${order.reason || "unknown"}` });
+    }
+
+    if (order.local) {
+      const out = await queue.run("reprint-one", async () => {
+        const client = await getClient();
+        return fetchOneLabel(client, order);
+      });
+      openFile(out.file);
+      return res.json({ message: `Opened label for ${order.orderId}`, file: out.file, machine: order.machine });
+    }
+
+    const peer = listPeers().find((p) => p.name === order.machine);
+    if (!peer) return res.status(502).json({ error: `Order is on ${order.machine}, which is not configured here.` });
+    const r = await fetch(`${peer.url}/api/peer/order-label`, {
+      method: "POST",
+      headers: { "X-Agent-Token": sharedSecret(), "Content-Type": "application/json" },
+      body: JSON.stringify({ q }),
+    });
+    const j = await r.json();
+    if (!r.ok) return res.status(502).json({ error: `${order.machine}: ${j.error || r.status}` });
+
+    const dir = path.join(LABELS_DIR, printDayIST(), "reprints");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, path.basename(j.name));
+    fs.writeFileSync(file, Buffer.from(j.pdf, "base64"));
+    openFile(file);
+    res.json({ message: `Opened label for ${order.orderId} (from ${order.machine})`, file, machine: order.machine });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// A peer fetches one of ITS orders' labels and returns the bytes.
+app.post("/api/peer/order-label", peerAuth, async (req, res) => {
+  try {
+    const order = store.findOrder(String((req.body && req.body.q) || ""));
+    if (!order) return res.status(404).json({ error: "not found here" });
+    const out = await queue.run("peer-reprint-one", async () => {
+      const client = await getClient();
+      return fetchOneLabel(client, order);
+    });
+    res.json({ name: path.basename(out.file), pdf: Buffer.from(out.bytes).toString("base64") });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

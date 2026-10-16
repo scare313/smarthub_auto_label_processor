@@ -394,6 +394,44 @@ export const store = {
     return Object.keys(read().settledTasks || {}).length;
   },
 
+  // Find one order from whatever a barcode scanner produced.
+  //
+  // Deliberately tolerant about WHICH identifier it is. A USB scanner reads
+  // whatever the courier printed on the label, and that is not guaranteed to be
+  // the tracking id - it may be the shipment id, the marketplace order id, or
+  // any of those wrapped in a prefix or check digits. Rather than guess, try
+  // every id we hold, exact first and then contains, so a scan finds the order
+  // regardless of which one the barcode encodes.
+  findOrder(query) {
+    const q = String(query || "").trim().toUpperCase();
+    if (q.length < 4) return null; // too short to be a real scan
+
+    const s = read();
+    const rows = Object.entries(s.processed);
+    const ids = (k, r) => [r.trackingId, k, r.orderId].filter(Boolean).map((x) => String(x).toUpperCase());
+
+    // Exact match on any identifier wins.
+    for (const [k, r] of rows) {
+      if (ids(k, r).includes(q)) return { customerShipmentId: k, ...r, matchedOn: "exact" };
+    }
+    // Then either direction of containment, which covers a scanner that adds a
+    // prefix as well as a barcode that holds only part of the id.
+    for (const [k, r] of rows) {
+      if (ids(k, r).some((v) => v.includes(q) || q.includes(v))) {
+        return { customerShipmentId: k, ...r, matchedOn: "partial" };
+      }
+    }
+    // Not labelled - it may still be a known failure, which is the answer to
+    // "why is there no label for this parcel?"
+    for (const [k, f] of Object.entries(s.failures || {})) {
+      const v = [k, f.orderId].filter(Boolean).map((x) => String(x).toUpperCase());
+      if (v.includes(q) || v.some((x) => x.includes(q))) {
+        return { customerShipmentId: k, ...f, status: "FAILED", matchedOn: "failure" };
+      }
+    }
+    return null;
+  },
+
   failureCounts() {
     const s = read();
     let failing = 0;

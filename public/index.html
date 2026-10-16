@@ -30,6 +30,21 @@
   /* Deliberately quiet. These orders are retried every cycle on their own and
      need nothing from anyone, so this is a note, not an alarm. Red is reserved
      for the things that actually stop work: an expired session, a dead peer. */
+  .scanbox { margin: 0 0 1.2rem; }
+  .scanbox label { display: block; font-size: 0.75rem; color: #999; margin-bottom: 0.3rem; }
+  #scan { width: 100%; padding: 0.7rem 0.9rem; font-size: 1rem; border-radius: 10px;
+          border: 1px solid #8884; background: #6662; color: inherit; }
+  #scan:focus { outline: 2px solid #2ecc71aa; outline-offset: 1px; }
+  .scanresult { margin-top: 0.7rem; background: #8881; border: 1px solid #8883;
+                border-radius: 10px; padding: 0.8rem 1rem; font-size: 0.86rem; }
+  .scanresult .big { font-size: 1.05rem; font-weight: 700; }
+  .scanresult .sku { font-size: 1rem; font-weight: 600; color: #2ecc71; margin: 0.3rem 0; }
+  .scanresult .meta { color: #999; font-size: 0.8rem; }
+  .scanresult .warn { color: #e74c3c; font-weight: 600; }
+  .scanresult button { margin-top: 0.7rem; background: #2ecc71; color: #04342c; border: none;
+                       border-radius: 8px; padding: 0.55rem 1rem; font-size: 0.9rem;
+                       font-weight: 700; cursor: pointer; }
+
   .upcoming { font-size: 0.8rem; color: #999; margin: -1rem 0 1rem; display: flex;
               flex-wrap: wrap; gap: 0 1.1rem; }
   .upcoming b { color: inherit; font-weight: 600; }
@@ -167,6 +182,13 @@
   <div class="attnpanel" id="attention-panel" hidden>
     <div id="attention-list"></div>
     <button class="ghost" id="btn-retry-all">Reset counters</button>
+  </div>
+
+  <div class="scanbox">
+    <label for="scan">Scan a parcel</label>
+    <input id="scan" type="text" autocomplete="off" spellcheck="false"
+           placeholder="Scan the label barcode, or type a tracking / order id">
+    <div class="scanresult" id="scan-result" hidden></div>
   </div>
 
   <details class="advanced">
@@ -492,6 +514,85 @@ $("attention").onclick = () => {
   panel.hidden = !panel.hidden;
   $("attention").setAttribute("aria-expanded", String(!panel.hidden));
 };
+// --- Scan a parcel ---------------------------------------------------------
+//
+// A USB barcode scanner is a keyboard: it types the code then sends Enter. So
+// the box only has to handle Enter, but it MUST hold focus - a worker with a
+// parcel in each hand is not going to click the field first. It refocuses after
+// every scan and whenever focus is lost, so scanning is continuous.
+const scan = $("scan");
+const scanResult = $("scan-result");
+
+function keepScanFocus() {
+  // Never steal focus from something the user is actually typing in.
+  const a = document.activeElement;
+  if (a && a !== scan && (a.tagName === "INPUT" || a.tagName === "SELECT" || a.tagName === "TEXTAREA")) return;
+  scan.focus();
+}
+
+function showScan(html) {
+  scanResult.innerHTML = html;
+  scanResult.hidden = false;
+}
+
+async function doScan(q) {
+  showScan('<span class="meta">Looking up ' + esc(q) + '…</span>');
+  try {
+    const r = await fetch("/api/order?q=" + encodeURIComponent(q));
+    const j = await r.json();
+    if (!r.ok) {
+      showScan('<span class="warn">' + esc(j.error || "Not found") + "</span>");
+      return;
+    }
+    const o = j.order;
+    const sku = (o.lineItems || []).map((l) => esc(l.msku) + (l.qty > 1 ? " × " + l.qty : "")).join(", ");
+    const failed = o.status === "FAILED";
+    showScan(
+      '<div class="big">' + esc(o.orderId || o.customerShipmentId) + "</div>" +
+        (sku ? '<div class="sku">' + sku + "</div>" : "") +
+        '<div class="meta">' + esc(o.channel || "") + " · ship " + esc(o.date || "?") +
+        " · " + esc(o.machine || "") + "</div>" +
+        (o.trackingId ? '<div class="meta">tracking ' + esc(o.trackingId) + "</div>" : "") +
+        (failed
+          ? '<div class="warn">No label yet — still failing: ' + esc(o.reason || "unknown") + "</div>"
+          : '<div class="meta">' +
+            (o.printed ? "printed " + (o.printedAt ? new Date(o.printedAt).toLocaleString() : "") : "labelled, not yet printed") +
+            "</div>") +
+        (failed ? "" : '<button id="btn-scan-print">Print this label</button>')
+    );
+    const b = $("btn-scan-print");
+    if (b) {
+      b.onclick = async () => {
+        b.disabled = true;
+        b.textContent = "Fetching…";
+        const rr = await fetch("/api/order/label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ q }),
+        });
+        const jj = await rr.json();
+        b.disabled = false;
+        b.textContent = "Print this label";
+        setBanner(jj.error || jj.message, rr.ok ? "ok" : "err");
+        keepScanFocus();
+      };
+    }
+  } catch (e) {
+    showScan('<span class="warn">Lookup failed: ' + esc(e.message) + "</span>");
+  }
+  keepScanFocus();
+}
+
+scan.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  const q = scan.value.trim();
+  scan.value = ""; // clear immediately, ready for the next parcel
+  if (q.length >= 4) doScan(q);
+});
+scan.addEventListener("blur", () => setTimeout(keepScanFocus, 150));
+keepScanFocus();
+
 $("btn-retry-all").onclick = () => post("/api/exceptions/retry", { body: { all: true } });
 
 let lastLogLines = [];

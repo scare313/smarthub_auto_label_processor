@@ -282,3 +282,25 @@ export function reprintLast() {
   }
   return existing;
 }
+
+// Fetch ONE order's label on demand - the scan-a-parcel-and-reprint case.
+//
+// Deliberately does NOT touch printed/printedAt. This is a reprint: the parcel
+// was already handed over or is about to be, and rewriting that record would
+// corrupt the only account of what has actually been printed.
+export async function fetchOneLabel(client, { customerShipmentId, channel, orderId }) {
+  const ch = resolveChannel(channel);
+  const { url, errors = [] } = await client.retrieveCombinedLabelUrl([customerShipmentId], ch.marketplace);
+  if (!url) {
+    const why = errors.length ? JSON.stringify(errors).slice(0, 200) : "SmartHub returned no document URL";
+    throw new Error(`No label available for ${orderId || customerShipmentId}: ${why}`);
+  }
+  const bytes = await client.downloadBytes(url);
+  const dir = path.join(LABELS_DIR, printDayIST(), "reprints");
+  fs.mkdirSync(dir, { recursive: true });
+  const safe = String(orderId || customerShipmentId).replace(/[^A-Za-z0-9_-]/g, "");
+  const file = path.join(dir, `${safe}-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.pdf`);
+  fs.writeFileSync(file, bytes);
+  store.audit(ch.key, "reprint-one", `${orderId || customerShipmentId} -> ${path.basename(file)}`);
+  return { file, bytes };
+}
